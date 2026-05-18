@@ -24,6 +24,23 @@ commit collapses this section into `## [X.Y.Z] — <date>`.
   unconditionally, so an older server (or a non-pipeline-check
   publish) is never hidden.
 
+### Security
+
+- **`pipelineCheck.serverCommand` and `pipelineCheck.serverArgs` are now
+  `machine-overridable`.** Workspace overrides require an explicit
+  prompt, so a malicious `.vscode/settings.json` can't silently swap
+  the interpreter or inject `-c "<code>"` once the user trusts the
+  workspace.
+- **Declared `capabilities.untrustedWorkspaces: "limited"`** and
+  `virtualWorkspaces: false`. The extension stays inactive in
+  untrusted workspaces until the user trusts them, so the LSP child
+  process never spawns from a freshly-cloned, untrusted repo.
+- **Hardened the publish workflow.** Pinned `@vscode/vsce` and `ovsx`
+  to specific versions (no more `@latest` with PATs in env), added a
+  `git merge-base` check that refuses to publish a tag that isn't on
+  `main`, and narrowed workflow-level permissions to `contents: read`
+  with the publish job opting up to `contents: write`.
+
 ### Changed
 
 - **Marketplace polish pass.** The `package.json` `description` is

@@ -120,10 +120,10 @@ async function startClient(): Promise<void> {
   }
   client = buildClient();
   // The output channel is created by LanguageClient as a side effect of
-  // construction, so capture it before we drop the broken client on
-  // failure (the "Open server log" action below still needs to focus it
-  // to surface the server's traceback).
-  const outputChannel = client.outputChannel;
+  // construction, so it is always present here. Capture it before we
+  // drop the broken client on failure (the "Open server log" action
+  // below still needs to focus it to surface the server's traceback).
+  const outputChannel: vscode.OutputChannel = client.outputChannel;
   try {
     await client.start();
   } catch (err) {
@@ -145,7 +145,7 @@ async function startClient(): Promise<void> {
         'Copied: pip install "pipeline-check[lsp]"',
       );
     } else if (choice === "Open server log") {
-      outputChannel?.show();
+      outputChannel.show();
     }
     // Drop the broken client so a subsequent restart starts fresh
     // rather than trying to recover from a half-initialised state.

@@ -45,6 +45,13 @@
     "onLanguage:terraform",
     "onLanguage:groovy"
   ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Pipeline-Check spawns the configured Python interpreter to analyze workflow files. In untrusted workspaces the extension stays inactive until the workspace is trusted."
+    },
+    "virtualWorkspaces": false
+  },
   "contributes": {
     "commands": [
       {
@@ -65,7 +72,8 @@
         "pipelineCheck.serverCommand": {
           "type": "string",
           "default": "python",
-          "markdownDescription": "Command used to launch the language server. Defaults to `python`; override if `pipeline_check` is installed under a different interpreter (e.g. `python3`, or an absolute path to a virtualenv interpreter)."
+          "scope": "machine-overridable",
+          "markdownDescription": "Command used to launch the language server. Defaults to `python`; override if `pipeline_check` is installed under a different interpreter (e.g. `python3`, or an absolute path to a virtualenv interpreter). An absolute path is recommended — a bare name resolves through `PATH`, which a workspace can manipulate. Scope is `machine-overridable`: workspace overrides require an explicit prompt."
         },
         "pipelineCheck.serverArgs": {
           "type": "array",
@@ -76,7 +84,8 @@
             "-m",
             "pipeline_check.lsp"
           ],
-          "markdownDescription": "Arguments passed to the server command. Default invokes the module via `python -m pipeline_check.lsp`."
+          "scope": "machine-overridable",
+          "markdownDescription": "Arguments passed to the server command. Default invokes the module via `python -m pipeline_check.lsp`. Scope is `machine-overridable`: workspace overrides require an explicit prompt, since arbitrary args can execute arbitrary code (e.g. `-c \"...\"`)."
         },
         "pipelineCheck.severityThreshold": {
           "type": "string",

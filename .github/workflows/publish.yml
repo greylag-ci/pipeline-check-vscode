@@ -25,16 +25,23 @@ on:
         required: true
         type: string
 
+# Workflow default is read-only; the publish job widens to
+# `contents: write` for the GitHub release step. GitHub Actions doesn't
+# support step-level permissions, so this is the tightest scope
+# available without splitting into two jobs.
 permissions:
-  contents: write   # creating the GitHub release
+  contents: read
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed by the "Create GitHub release" step
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0   # needed for the merge-base check below
 
       - uses: actions/setup-node@v4
         with:
@@ -44,15 +51,31 @@ jobs:
       - run: npm ci
 
       - name: Verify tag matches package.json version
+        env:
+          # On tag push GITHUB_REF_NAME is the tag; on workflow_dispatch
+          # it's the dispatching branch, so prefer the explicit input.
+          REF_NAME: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME#v}"
+          tag="${REF_NAME#v}"
           pkg=$(node -p "require('./package.json').version")
           if [ "$tag" != "$pkg" ]; then
             echo "::error::Tag v$tag does not match package.json version $pkg"
             exit 1
           fi
           echo "Tag and package.json agree on version $pkg"
+
+      - name: Verify tag is reachable from main
+        env:
+          REF_NAME: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$REF_NAME" origin/main; then
+            echo "::error::Tag $REF_NAME is not reachable from origin/main — refusing to publish"
+            exit 1
+          fi
+          echo "Tag $REF_NAME is on main"
 
       - name: Lint
         run: npm run lint
@@ -61,9 +84,12 @@ jobs:
         run: npm run compile
 
       - name: Package vsix
+        # vsce and ovsx are pinned so a compromised @latest can't ship a
+        # surprise build (and exfiltrate the PATs below). Bump via
+        # Dependabot like the rest of the deps.
         run: |
           version=$(node -p "require('./package.json').version")
-          npx --yes @vscode/vsce@latest package \
+          npx --yes @vscode/vsce@3.9.1 package \
             --out "pipeline-check-${version}.vsix"
           ls -lh "pipeline-check-${version}.vsix"
           echo "VSIX_PATH=pipeline-check-${version}.vsix" >> $GITHUB_ENV
@@ -72,7 +98,7 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
-          npx --yes @vscode/vsce@latest publish \
+          npx --yes @vscode/vsce@3.9.1 publish \
             --packagePath "$VSIX_PATH" \
             --pat "$VSCE_PAT"
 
@@ -80,7 +106,7 @@ jobs:
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: |
-          npx --yes ovsx@latest publish "$VSIX_PATH" \
+          npx --yes ovsx@0.10.12 publish "$VSIX_PATH" \
             --pat "$OVSX_PAT"
 
       - name: Create GitHub release
