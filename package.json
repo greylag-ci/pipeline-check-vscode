@@ -1,7 +1,7 @@
 {
   "name": "pipeline-check",
   "displayName": "Pipeline-Check",
-  "description": "CI/CD security posture scanner. Inline findings, severity badges, and recommended-action hints in your editor — covers 22 providers and 15 compliance frameworks.",
+  "description": "Lint CI/CD pipelines for 22 providers against OWASP Top 10 CI/CD Risks and 14 other compliance frameworks. 810+ rules, inline in your editor.",
   "version": "0.1.0",
   "publisher": "greylag-ci",
   "license": "MIT",
@@ -49,12 +49,12 @@
     "commands": [
       {
         "command": "pipelineCheck.restart",
-        "title": "Restart server",
+        "title": "Restart language server",
         "category": "Pipeline-Check"
       },
       {
         "command": "pipelineCheck.showLog",
-        "title": "Show server log",
+        "title": "Show language server output",
         "category": "Pipeline-Check"
       }
     ],
@@ -65,7 +65,7 @@
         "pipelineCheck.serverCommand": {
           "type": "string",
           "default": "python",
-          "description": "Command used to launch the LSP server. Defaults to 'python'; override if pipeline_check is installed under a different interpreter (e.g. 'python3', or an absolute path to a virtualenv interpreter)."
+          "markdownDescription": "Command used to launch the language server. Defaults to `python`; override if `pipeline_check` is installed under a different interpreter (e.g. `python3`, or an absolute path to a virtualenv interpreter)."
         },
         "pipelineCheck.serverArgs": {
           "type": "array",
@@ -76,7 +76,7 @@
             "-m",
             "pipeline_check.lsp"
           ],
-          "description": "Arguments passed to the server command. Default invokes the module via 'python -m pipeline_check.lsp'."
+          "markdownDescription": "Arguments passed to the server command. Default invokes the module via `python -m pipeline_check.lsp`."
         },
         "pipelineCheck.trace.server": {
           "type": "string",
@@ -86,7 +86,7 @@
             "verbose"
           ],
           "default": "off",
-          "description": "Traces LSP traffic between the editor and the pipeline_check.lsp server. Set to 'verbose' when debugging."
+          "markdownDescription": "Traces LSP traffic between the editor and the `pipeline_check.lsp` server. Set to `verbose` when debugging."
         }
       }
     }

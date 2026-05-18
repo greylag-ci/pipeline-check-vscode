@@ -69,27 +69,34 @@ async function startClient(): Promise<void> {
     return;
   }
   client = buildClient();
+  // The output channel is created by LanguageClient as a side effect of
+  // construction, so capture it before we drop the broken client on
+  // failure (the "Open server log" action below still needs to focus it
+  // to surface the server's traceback).
+  const outputChannel = client.outputChannel;
   try {
     await client.start();
   } catch (err) {
-    // The most common cause is `python -m pipeline_check.lsp` failing
-    // — either Python is not on PATH or the [lsp] extra is not
-    // installed. Surface both possibilities in one notification with
-    // a shortcut to the server's stderr log so the underlying
-    // traceback is one click away.
+    // The most common cause is `python -m pipeline_check.lsp` failing:
+    // either Python is not on PATH or the [lsp] extra is not installed.
+    // Surface the install command and the server log as two distinct
+    // actions so the user can act on either without re-reading the
+    // notification body. The notification chrome already shows the
+    // extension name, so the message body doesn't repeat it.
     const message = err instanceof Error ? err.message : String(err);
-    vscode.window
-      .showErrorMessage(
-        `Pipeline-Check: failed to start LSP server (${message}). ` +
-          `Install the optional extra with: ` +
-          `pip install "pipeline-check[lsp]"`,
-        "Open server log",
-      )
-      .then((choice) => {
-        if (choice === "Open server log") {
-          client?.outputChannel?.show();
-        }
-      });
+    const choice = await vscode.window.showErrorMessage(
+      `Language server failed to start (${message}).`,
+      "Copy install command",
+      "Open server log",
+    );
+    if (choice === "Copy install command") {
+      await vscode.env.clipboard.writeText('pip install "pipeline-check[lsp]"');
+      vscode.window.showInformationMessage(
+        'Copied: pip install "pipeline-check[lsp]"',
+      );
+    } else if (choice === "Open server log") {
+      outputChannel?.show();
+    }
     // Drop the broken client so a subsequent restart starts fresh
     // rather than trying to recover from a half-initialised state.
     client = undefined;
@@ -112,17 +119,15 @@ export async function activate(
     vscode.commands.registerCommand("pipelineCheck.restart", async () => {
       await stopClient();
       await startClient();
-      vscode.window.showInformationMessage(
-        "Pipeline-Check: server restarted.",
-      );
+      vscode.window.showInformationMessage("Language server restarted.");
     }),
     vscode.commands.registerCommand("pipelineCheck.showLog", () => {
       if (client?.outputChannel) {
         client.outputChannel.show();
       } else {
         vscode.window.showInformationMessage(
-          "Pipeline-Check: the server is not running yet; " +
-            "open a supported file or run 'Pipeline-Check: Restart server'.",
+          "The language server is not running yet. Open a supported file " +
+            "or run 'Pipeline-Check: Restart language server'.",
         );
       }
     }),
