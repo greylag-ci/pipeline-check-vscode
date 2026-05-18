@@ -23,6 +23,28 @@ const LANGUAGE_ID = "pipelineCheck";
 const LANGUAGE_NAME = "Pipeline-Check";
 const OUTPUT_CHANNEL = "Pipeline-Check";
 
+// Upstream severity ranks. Higher = more severe. The server stuffs the
+// pipeline-check severity name into Diagnostic.data["severity"] (e.g.
+// "CRITICAL"). The LSP DiagnosticSeverity enum collapses CRITICAL + HIGH
+// into a single Error value, so we can't filter precisely on
+// vscode.Diagnostic.severity alone.
+const SEVERITY_RANK: Record<string, number> = {
+  INFO: 0,
+  LOW: 1,
+  MEDIUM: 2,
+  HIGH: 3,
+  CRITICAL: 4,
+};
+
+// Threshold knob values. Map each to the rank a diagnostic must
+// reach to survive the filter.
+const THRESHOLD_RANK: Record<string, number> = {
+  low: SEVERITY_RANK.LOW,
+  medium: SEVERITY_RANK.MEDIUM,
+  high: SEVERITY_RANK.HIGH,
+  critical: SEVERITY_RANK.CRITICAL,
+};
+
 let client: LanguageClient | undefined;
 
 function buildClient(): LanguageClient {
@@ -51,6 +73,34 @@ function buildClient(): LanguageClient {
       configurationSection: "pipelineCheck",
     },
     outputChannelName: OUTPUT_CHANNEL,
+    middleware: {
+      // Drop diagnostics below the user-configured severity threshold
+      // before they reach VS Code's Problems panel. The config is
+      // re-read on each publish so a settings change takes effect on
+      // the next scan without needing a server restart. Diagnostics
+      // whose `data.severity` is missing (older server, or a
+      // not-from-pipeline-check publish that somehow flowed through)
+      // pass through unconditionally so the filter never hides
+      // legitimate signal when the metadata is absent.
+      handleDiagnostics: (uri, diagnostics, next) => {
+        const threshold = vscode.workspace
+          .getConfiguration("pipelineCheck")
+          .get<string>("severityThreshold", "low");
+        const minRank = THRESHOLD_RANK[threshold] ?? SEVERITY_RANK.LOW;
+        const filtered = diagnostics.filter((diag) => {
+          const data = (diag as vscode.Diagnostic & {
+            data?: { severity?: string };
+          }).data;
+          const name = data?.severity;
+          if (!name) {
+            return true;
+          }
+          const rank = SEVERITY_RANK[name];
+          return rank === undefined || rank >= minRank;
+        });
+        next(uri, filtered);
+      },
+    },
   };
 
   return new LanguageClient(

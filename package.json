@@ -78,6 +78,17 @@
           ],
           "markdownDescription": "Arguments passed to the server command. Default invokes the module via `python -m pipeline_check.lsp`."
         },
+        "pipelineCheck.severityThreshold": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ],
+          "default": "low",
+          "markdownDescription": "Lowest severity that produces a diagnostic. Findings below this level are dropped on the client side so the gutter / Problems panel only carries the cuts you care about. Mirrors the CLI's `--severity-threshold`. Default `low` matches CLI behavior; set to `high` or `critical` for a quieter editor."
+        },
         "pipelineCheck.trace.server": {
           "type": "string",
           "enum": [

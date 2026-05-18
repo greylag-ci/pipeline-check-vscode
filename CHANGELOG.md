@@ -9,6 +9,21 @@ versions follow [SemVer](https://semver.org/).
 PRs landing on `main` between releases append entries here. The release
 commit collapses this section into `## [X.Y.Z] — <date>`.
 
+### Added
+
+- **`pipelineCheck.severityThreshold` setting.** A new enum knob
+  (`low` / `medium` / `high` / `critical`, default `low`) that mirrors
+  the CLI's `--severity-threshold`. Drives a client-side
+  `handleDiagnostics` middleware that filters out diagnostics whose
+  upstream pipeline-check severity falls below the threshold before
+  they reach the gutter or Problems panel, so the editor surface can
+  be tuned independently of the CLI's report. The filter reads
+  `Diagnostic.data["severity"]` (set by the v1.0.6 server) so it can
+  distinguish `CRITICAL` from `HIGH` (both map to LSP `Error`).
+  Diagnostics without the `data.severity` metadata pass through
+  unconditionally, so an older server (or a non-pipeline-check
+  publish) is never hidden.
+
 ### Changed
 
 - **Marketplace polish pass.** The `package.json` `description` is

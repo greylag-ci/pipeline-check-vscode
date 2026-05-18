@@ -58,6 +58,7 @@ pip install "pipeline-check[lsp]"
 |---|---|---|
 | `pipelineCheck.serverCommand` | `python` | Command used to launch the language server. Override if `pipeline_check` is installed under a different interpreter. |
 | `pipelineCheck.serverArgs` | `["-m", "pipeline_check.lsp"]` | Arguments passed to the server command. |
+| `pipelineCheck.severityThreshold` | `low` | Lowest severity that produces a diagnostic. One of `low`, `medium`, `high`, `critical`. Mirrors the CLI's `--severity-threshold`. |
 | `pipelineCheck.trace.server` | `off` | Traces LSP traffic. Set to `verbose` when debugging. |
 
 ## Development
