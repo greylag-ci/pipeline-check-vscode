@@ -141,3 +141,10 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# VS Code extension build output and packaging artifacts
+out/
+*.vsix
+
+# VS Code dev sandbox
+.vscode-test/

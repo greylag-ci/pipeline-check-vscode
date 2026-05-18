@@ -1,0 +1,94 @@
+{
+  "name": "pipeline-check",
+  "displayName": "Pipeline-Check",
+  "description": "CI/CD security posture scanner. Inline findings, severity badges, and recommended-action hints in your editor — covers 22 providers and 15 compliance frameworks.",
+  "version": "0.0.1",
+  "publisher": "greylag-ci",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Linters"
+  ],
+  "keywords": [
+    "ci",
+    "cd",
+    "security",
+    "pipeline",
+    "github-actions",
+    "gitlab-ci",
+    "terraform",
+    "cloudformation",
+    "kubernetes",
+    "helm",
+    "dockerfile"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/greylag-ci/pipeline-check-vscode.git"
+  },
+  "bugs": {
+    "url": "https://github.com/greylag-ci/pipeline-check-vscode/issues"
+  },
+  "homepage": "https://github.com/greylag-ci/pipeline-check-vscode#readme",
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onLanguage:yaml",
+    "onLanguage:json",
+    "onLanguage:dockerfile",
+    "onLanguage:terraform",
+    "onLanguage:groovy"
+  ],
+  "contributes": {
+    "configuration": {
+      "type": "object",
+      "title": "Pipeline-Check",
+      "properties": {
+        "pipelineCheck.serverCommand": {
+          "type": "string",
+          "default": "python",
+          "description": "Command used to launch the LSP server. Defaults to 'python'; override if pipeline_check is installed under a different interpreter (e.g. 'python3', or an absolute path to a virtualenv interpreter)."
+        },
+        "pipelineCheck.serverArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "-m",
+            "pipeline_check.lsp"
+          ],
+          "description": "Arguments passed to the server command. Default invokes the module via 'python -m pipeline_check.lsp'."
+        },
+        "pipelineCheck.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Traces LSP traffic between the editor and the pipeline_check.lsp server. Set to 'verbose' when debugging."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.56.0",
+    "typescript": "^5.4.0"
+  }
+}
