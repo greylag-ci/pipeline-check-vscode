@@ -10,6 +10,20 @@
 
 Lint CI/CD pipelines for 22 providers against OWASP Top 10 CI/CD Risks and 14 other compliance frameworks. 810+ rules, inline in your editor: severity-graded gutter squiggles, hover descriptions with `--explain` prose, and recommended-action hints. Built on the same rule registry as the [pipeline-check](https://github.com/dmartinochoa/pipeline-check) CLI, so editor findings match `pipeline_check --output json` byte-for-byte (modulo position translation).
 
+<!--
+Once docs/screenshots/01-inline.png, 02-problems-panel.png, and
+03-hover.png exist, uncomment the block below. See
+docs/screenshots/README.md for the capture recipe. The marketplace
+listing renders these via GitHub's raw blob URL, so they don't need
+to ship inside the .vsix.
+
+![Inline findings in the editor gutter](docs/screenshots/01-inline.png)
+
+![The Problems panel with clickable rule IDs](docs/screenshots/02-problems-panel.png)
+
+![Hover tooltip showing problem, description, and fix](docs/screenshots/03-hover.png)
+-->
+
 ## What it scans
 
 Pilot provider coverage (single-file workflow providers plus Dockerfile):

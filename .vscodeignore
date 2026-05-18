@@ -4,6 +4,7 @@
 src/**
 test-fixtures/**
 scripts/**
+docs/**
 .gitignore
 .eslintrc.json
 tsconfig.json
