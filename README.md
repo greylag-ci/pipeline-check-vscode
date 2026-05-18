@@ -2,9 +2,27 @@
 
 VS Code extension for [pipeline-check](https://github.com/dmartinochoa/pipeline-check), a CI/CD security posture scanner. Surfaces 800+ rule findings inline in the editor: severity badges, hover descriptions with `--explain` prose, and recommended-action hints.
 
+## Install
+
+Once the marketplace listings are live, install via the in-editor extension panel (search for `Pipeline-Check`) or directly:
+
+```bash
+# Microsoft VS Code Marketplace
+code --install-extension greylag-ci.pipeline-check
+
+# Open VSX (VSCodium, Gitpod, code-server, Cursor)
+codium --install-extension greylag-ci.pipeline-check
+```
+
+You also need the Python server:
+
+```bash
+pip install "pipeline-check[lsp]"
+```
+
 ## Status
 
-**Pre-MVP scaffold.** The TypeScript LSP client is wired up; the `pipeline_check.lsp` server lives upstream in `dmartinochoa/pipeline-check` and is under construction. The extension installs cleanly today and will start producing lint output once the server half ships.
+**v0.1.0** — first release, pilot provider coverage (single-file workflow providers + Dockerfile). See [CHANGELOG.md](CHANGELOG.md) for the per-version trail.
 
 ## Architecture
 

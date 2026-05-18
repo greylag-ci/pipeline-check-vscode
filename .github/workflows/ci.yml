@@ -1,0 +1,46 @@
+name: CI
+
+# Gate every PR and every push to main on the same three checks the
+# publish workflow runs before shipping: lint, type-compile, and vsix
+# pack. If a contributor's PR can't be packaged, the marketplace
+# upload would have failed anyway, so failing fast here saves a
+# release-day fire-drill.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: TypeScript compile
+        run: npm run compile
+
+      - name: Verify vsix packs cleanly
+        run: |
+          npx --yes @vscode/vsce@latest package --out pipeline-check.vsix
+          ls -lh pipeline-check.vsix
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: pipeline-check.vsix
+          retention-days: 14

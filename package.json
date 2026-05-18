@@ -2,9 +2,14 @@
   "name": "pipeline-check",
   "displayName": "Pipeline-Check",
   "description": "CI/CD security posture scanner. Inline findings, severity badges, and recommended-action hints in your editor — covers 22 providers and 15 compliance frameworks.",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "publisher": "greylag-ci",
   "license": "MIT",
+  "icon": "icon.png",
+  "galleryBanner": {
+    "color": "#04101a",
+    "theme": "dark"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },

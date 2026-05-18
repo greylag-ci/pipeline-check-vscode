@@ -1,0 +1,93 @@
+name: Publish
+
+# Fired by `git tag v0.1.0 && git push --tags`. The job verifies the
+# tag matches package.json#version (so a stray tag can't ship the
+# wrong build), packages the extension, publishes to both the
+# VS Code Marketplace and Open VSX, then attaches the .vsix to a
+# GitHub release.
+#
+# Required repo secrets:
+#   - VSCE_PAT  — Azure DevOps Personal Access Token, scope
+#                 `Marketplace > Acquire and Manage`. Bound to the
+#                 `greylag-ci` publisher on marketplace.visualstudio.com.
+#   - OVSX_PAT  — Open VSX access token from open-vsx.org user
+#                 settings. Bound to the `greylag-ci` namespace
+#                 after the Eclipse Contributor Agreement is signed.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to (re)publish'
+        required: true
+        type: string
+
+permissions:
+  contents: write   # creating the GitHub release
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Verify tag matches package.json version
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          pkg=$(node -p "require('./package.json').version")
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::Tag v$tag does not match package.json version $pkg"
+            exit 1
+          fi
+          echo "Tag and package.json agree on version $pkg"
+
+      - name: Lint
+        run: npm run lint
+
+      - name: TypeScript compile
+        run: npm run compile
+
+      - name: Package vsix
+        run: |
+          version=$(node -p "require('./package.json').version")
+          npx --yes @vscode/vsce@latest package \
+            --out "pipeline-check-${version}.vsix"
+          ls -lh "pipeline-check-${version}.vsix"
+          echo "VSIX_PATH=pipeline-check-${version}.vsix" >> $GITHUB_ENV
+
+      - name: Publish to VS Code Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          npx --yes @vscode/vsce@latest publish \
+            --packagePath "$VSIX_PATH" \
+            --pat "$VSCE_PAT"
+
+      - name: Publish to Open VSX
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          npx --yes ovsx@latest publish "$VSIX_PATH" \
+            --pat "$OVSX_PAT"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          gh release create "v${version}" "$VSIX_PATH" \
+            --title "v${version}" \
+            --notes-file <(awk '/^## \[/{n++} n==2{exit} n==1{print}' CHANGELOG.md)
