@@ -40,7 +40,15 @@ npm run compile     # one-shot compile
 npm run watch       # rebuild on change
 ```
 
-Press <kbd>F5</kbd> in VS Code with this folder open to launch an extension-host instance with the extension loaded. The `Run Extension` launch profile is committed in `.vscode/launch.json`.
+Press <kbd>F5</kbd> in VS Code with this folder open to launch an extension-host instance with the extension loaded. Two debug profiles ship in `.vscode/launch.json`:
+
+- **Run Extension** — opens a fresh window with no workspace. Use this when iterating on the client wiring against a checkout of your own code.
+- **Run Extension (sample workflow)** — opens `test-fixtures/sample-workflow/` as the workspace. The fixture is a deliberately-vulnerable GitHub Actions workflow and should produce four diagnostics (GHA-001, GHA-004, GHA-015, GHA-016) the moment you open the file. Quickest way to confirm the client → server round-trip works end-to-end.
+
+Two commands are registered in the running extension:
+
+- **Pipeline-Check: Restart server** — kills and respawns the LSP process. Useful after editing the Python server in a sibling checkout.
+- **Pipeline-Check: Show server log** — focuses the `Pipeline-Check` output channel where the server's `window/logMessage` traffic lands.
 
 ## Packaging
 

@@ -1,0 +1,29 @@
+# Deliberately-vulnerable workflow used to exercise the extension's
+# end-to-end loop. Opening this file with the extension active should
+# produce several Pipeline-Check diagnostics:
+#
+#   - GHA-001 on the `actions/checkout@v4` line (tag-pinned, not SHA)
+#   - GHA-004 at the workflow top (no explicit `permissions:` block)
+#   - GHA-015 inside the `release` job (no `timeout-minutes`)
+#   - GHA-016 on the `curl | bash` step (pipe-to-shell from a remote)
+#
+# Do NOT copy this file into a real repo. It is intentionally bad.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: curl -fsSL https://example.com/install.sh | bash
+
+      - name: Publish
+        run: echo "release artifacts published"

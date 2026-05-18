@@ -41,6 +41,18 @@
     "onLanguage:groovy"
   ],
   "contributes": {
+    "commands": [
+      {
+        "command": "pipelineCheck.restart",
+        "title": "Restart server",
+        "category": "Pipeline-Check"
+      },
+      {
+        "command": "pipelineCheck.showLog",
+        "title": "Show server log",
+        "category": "Pipeline-Check"
+      }
+    ],
     "configuration": {
       "type": "object",
       "title": "Pipeline-Check",
