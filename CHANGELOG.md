@@ -4,6 +4,107 @@ All notable changes to the Pipeline-Check VS Code extension. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [SemVer](https://semver.org/).
 
+> ⚠ **Release note for publish.yml:** the release-notes extractor (an
+> `awk` script in publish.yml) prints every line between the **first**
+> and **second** `## [` headers. When cutting a release, fold the
+> entries under `## [Unreleased]` into the new `## [X.Y.Z] — <date>`
+> section **above** Unreleased, or remove the Unreleased block for the
+> release commit. Otherwise the GitHub release ships boilerplate.
+
+## [Unreleased]
+
+PRs landing on `main` between releases append entries here. The
+release commit collapses this section into `## [X.Y.Z] — <date>`.
+
+The current run-up to v0.2.0 has the work below queued — landing
+order depends on which PRs in the [#11–#14 stack](https://github.com/greylag-ci/pipeline-check-vscode/pulls)
+merge first.
+
+### Added
+
+- **Inline CodeLens summary.** Each scanned file carries a
+  `Pipeline-Check: 2 critical · 1 high` lens at line 1. Click reveals
+  the Findings panel. Re-emits on every diagnostic publish so the
+  text tracks the latest scan. (R26)
+- **Status bar item.** Bottom-left of the window, shows the top two
+  non-zero severities (e.g. `$(shield) 3C 1H`) with a tooltip that
+  breaks down the full per-severity tally. Click reveals the
+  Findings panel. (R9)
+- **Keyboard navigation.** `Alt+F8` / `Shift+Alt+F8` jump between
+  Pipeline-Check findings in editor order (fsPath ascending, then by
+  line); wraps at both ends. Mirrors VS Code's `F8` muscle memory
+  for the global "Next Problem" command. (R12)
+- **Per-provider toggles.** New `pipelineCheck.disabledProviders`
+  setting silences whole providers. `dockerfile` covers both
+  `Dockerfile` and `Containerfile` (same syntax). Useful in a
+  monorepo where Pipeline-Check would otherwise lint a sub-project's
+  Dockerfile that has its own lint pipeline. (R25)
+- **Rule documentation link in leaf tooltip.** When the server
+  publishes a `Diagnostic.code.target` URL, the Findings tree's
+  leaf tooltip appends a clickable
+  `$(book) <rule-id> documentation` link below the message body. (R8)
+- **Client-side structured logging.** The extension's output channel
+  now interleaves `[client] HH:MM:SS.mmm` lines around activation
+  and command invocations with the LSP's `window/logMessage`
+  traffic. Easier to triage bug reports — start/ok/failed
+  breadcrumbs land in the same surface users already focus via
+  *Show language server output*. (R16)
+- **Pre-release channel.** Tags like `v0.2.0-rc.1` ship to the
+  marketplace pre-release channel; the matching GitHub release is
+  marked `prerelease`. Detection is by the presence of a `-` after
+  the semver core. (R24)
+
+### Changed
+
+- **`@vscode/test-electron` integration suite** now runs in CI
+  (Linux only, via `xvfb-run -a`). Five tests pin activation, the
+  command-registration contract, the Findings view registration,
+  the configuration schema completeness, and the workspace-trust
+  capability declarations. Catches what unit tests can only
+  approximate. (R17)
+- **Three-OS test matrix** — `[ubuntu-latest, windows-latest,
+  macos-latest]`. The LSP child-process spawn path is
+  Windows-sensitive; matrix CI catches the LF/CRLF and
+  path-separator bugs single-OS CI silently misses. (R21)
+- **Activation surface narrowed.** Triggers are
+  `workspaceContains:` patterns matching the providers we actually
+  scan (the `documentSelector` uses the same patterns). Opening an
+  unrelated `package.json` or `mkdocs.yml` no longer wakes up the
+  extension. (H4)
+- **Trigger-pattern list lives in one place.** Extracted into
+  `src/providers.ts` as a single `PROVIDERS` map; the `documentSelector`,
+  `activationEvents`, and the LSP middleware's per-provider filter
+  all read from it. A regression test asserts the manifest's
+  `activationEvents` stay in lockstep with the patterns. (R14)
+- **Shared `vi.mock("vscode")` factory** under `src/__testStubs__/`.
+  Unit tests now share a single stub instead of redefining the
+  surface per file. (R18)
+- **Marketplace description length** gated in CI at the
+  145-character truncation point so future edits don't blow it. (R20)
+
+### Fixed
+
+- **`Restart language server` toast no longer fires on failure** —
+  if the server failed to come up, the error notification already
+  carries the install hint; the success toast used to fire too,
+  giving the user contradictory signals. (R2)
+- **`stopClient` has a 2-second hard ceiling** on the LSP child's
+  shutdown. A deadlocked server used to hold the deactivate path
+  indefinitely; VS Code reported "Window not responding" until the
+  user force-quit. (R3)
+- **`groupByFile` no longer round-trips Uri through string** for
+  every group node. Bucket value carries the original Uri. (R4)
+- **`compareByLocation` sorts on `fsPath`** instead of the full URI
+  string. Cross-scheme entries (file:// vs untitled://) no longer
+  bunch at one end. (R5)
+- **`collectFindings` is memoised per refresh** — buildRoot and
+  updateBadge used to walk the global diagnostic store twice per
+  refresh. (R6)
+- **`onDidChangeDiagnostics` skips refreshes from unrelated
+  publishers.** ESLint / mypy / redhat.yaml keystroke chatter no
+  longer rebuilds the tree. The skip-check also catches *clears*
+  (a stale leaf can't outlive a cleared file). (R7)
+
 ## [0.1.1] — 2026-05-19
 
 Production-readiness pass. v0.1.0 was effectively unusable on a clean

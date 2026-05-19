@@ -1,41 +1,44 @@
 # Roadmap
 
-Production-readiness work for the Pipeline-Check VS Code extension, queued
-from the pre-marketplace security and packaging review. Items are grouped
-by severity; tick the box when the change lands on `main`.
+Production-readiness work for the Pipeline-Check VS Code extension. The
+pre-marketplace security and packaging review (C/H/M/L items below) is
+fully landed in v0.1.1. The in-depth code review of 2026-05-19 (R items
+at the bottom) is two-thirds landed across PRs #11–14.
 
-The "must-haves before next publish" set is **C1, C2, H1, H2**. All four
-are landed on `prod-ready-hardening`; the publish job is now gated on
-the `production` GitHub Environment.
+### Status snapshot
 
-### Maintainer action items before merging this branch
+| Layer | State |
+|---|---|
+| **v0.1.0 → v0.1.1** | Shipped 2026-05-19. C1–C2, H1–H4, M1–M5, L1–L6 all closed. |
+| **v0.1.1 → v0.2.0 (in flight)** | R1–R9, R12, R14, R16–R18, R20, R21, R24–R26 landed on stacked PRs #11–#14; merge them in order, then tag. |
+| **Blocked** | R10/R15/R29 (need scan-workspace merged), R11 (need suppression-comment syntax), R13/R27 (server-side change), R19 (interactive screenshot session), R22 (eslint-flat-config WIP), R23 (CodeQL setup), R28 (telemetry decision). |
 
-1. **Confirm the `production` GitHub Environment is configured** with
-   required reviewers and that `VSCE_PAT` / `OVSX_PAT` live as
-   environment secrets (not repo secrets). The workflow now references
-   `environment: production`; the gate is only as strong as the
-   environment's review rules.
-2. **Disable the default CodeQL setup** so the advanced
-   [.github/workflows/codeql.yml](.github/workflows/codeql.yml) (which
-   runs `security-extended`) can upload SARIF. Settings → Code security
-   → Code scanning → "CodeQL analysis" → click "Set up" / settings →
-   switch from "Default" to "Advanced" (or disable default outright).
-   Until this is done, the `analyze` check on PR #1 will fail with
-   "CodeQL analyses from advanced configurations cannot be processed
-   when the default setup is enabled".
-2. **Enable Private Vulnerability Reporting** on the repo (Settings →
-   Code security). Without it, the link in [SECURITY.md](SECURITY.md)
-   404s and external reporters have nowhere private to file.
-3. **Enable Discussions** on the repo (Settings → General → Features).
-   Without it, the `qna` link in [package.json](package.json) 404s
-   from the marketplace listing.
-4. **Smoke-test the activation narrowing (H4)** — open each provider's
-   sample workflow in the extension-host window (F5 with sample-workflow
-   profile) and confirm diagnostics still appear. The change drops
-   any custom workflow paths.
-5. **Verify the published v0.1.0 actually fails to activate** in a
-   clean VS Code (the C1 hypothesis). If confirmed, this branch
-   becomes a 0.1.1 hotfix.
+### Maintainer action items (still outstanding)
+
+These cannot land from a branch and have been queued since the
+production-readiness pass. Each one's failure mode is small enough
+that v0.2.0 can ship without them, but the listing improves once
+they're done.
+
+1. **Resolve the CodeQL default-setup conflict.** The advanced
+   [.github/workflows/codeql.yml](.github/workflows/codeql.yml) runs
+   `security-extended`; the org's default CodeQL setup conflicts and
+   the `analyze` check stays red. Settings → Code security → Code
+   scanning → switch CodeQL from "Default" to "Advanced". If org
+   policy forbids that, delete `codeql.yml` and lose
+   `security-extended`.
+2. **Enable Private Vulnerability Reporting.** Settings → Code
+   security. Without it, the link in [SECURITY.md](SECURITY.md) 404s
+   for external reporters.
+3. **Enable Discussions.** Settings → General → Features. Without it,
+   the `qna` link in [package.json](package.json) 404s on the
+   marketplace listing.
+4. **Manual H4 smoke** — F5 with the sample-workflow profile, open
+   each provider's trigger file, confirm diagnostics still appear.
+   The activation narrowing drops custom workflow paths intentionally
+   but the regression risk is non-zero.
+5. **Capture marketplace screenshots** ([R19](#review-pass-2026-05-19--improvements-from-in-depth-code-review)).
+   Highest-leverage conversion improvement still pending.
 
 ---
 
@@ -399,97 +402,106 @@ on their own.
 The findings below came out of a holistic review of the codebase after
 v0.1.1 shipped. Categories cluster related work into reviewable PRs.
 
+PR landing order (all stacked on `main`):
+- **#11** `review-followups` — R1–R9, R21
+- **#12** `review-followups-batch-2` — R12, R14, R16, R18, R20
+- **#13** `review-followups-batch-3` — R24, R25, R26
+- **#14** `review-followups-batch-4` — R17
+
+Total: 19 of 29 review items landed; the rest are blocked on external
+inputs (suppression syntax, screenshots) or stacked branches
+(scan-workspace).
+
 ### Code-level fixes (cheap wins)
 
-- [ ] **R1** Reorder the `filterByThreshold` import in
-      [src/extension.ts:72](src/extension.ts#L72) up to the rest of the
-      import block. Currently sits after a function declaration.
-- [ ] **R2** "Restart language server" toast at
-      [src/extension.ts:223](src/extension.ts#L223) fires even when
-      `startClient()` failed. Guard with `if (client)`.
-- [ ] **R3** Add a timeout to `stopClient()`
-      ([src/extension.ts:185-192](src/extension.ts#L185-L192)) —
-      a deadlocked LSP child holds the deactivate path indefinitely.
-- [ ] **R4** `groupByFile` does `key = f.uri.toString()` then
-      `vscode.Uri.parse(key)` to get the Uri back
-      ([src/findingsView.ts:357-385](src/findingsView.ts#L357-L385)).
-      Use a `Map<vscode.Uri, Finding[]>` keyed on the Uri directly.
-- [ ] **R5** `compareByLocation`
-      ([src/findingsView.ts:413](src/findingsView.ts#L413)) sorts on
-      `uri.toString()` which includes the `file://` scheme prefix.
-      Sort on `fsPath` instead.
+- [x] **R1** Reorder the `filterByThreshold` import in extension.ts up
+      to the rest of the import block. (PR #11)
+- [x] **R2** "Restart language server" toast no longer fires when
+      `startClient()` failed. (PR #11)
+- [x] **R3** `stopClient()` races the LSP shutdown against a 2-second
+      timer; dispose explicitly on timeout. (PR #11)
+- [x] **R4** `groupByFile` carries the original Uri alongside the
+      string key; no `Uri.parse` round-trip. (PR #11)
+- [x] **R5** `compareByLocation` sorts on `fsPath`. (PR #11)
 
 ### Performance
 
-- [ ] **R6** Cache `collectFindings()` per refresh. Currently called
-      twice per refresh (`buildRoot` + `updateBadge`); each walks every
-      diagnostic in the workspace.
-- [ ] **R7** Filter `onDidChangeDiagnostics` by the event's `uris`
-      payload — skip the refresh when none of the changed URIs carry a
-      pipeline-check diagnostic.
+- [x] **R6** `collectFindings()` memoised behind a per-refresh cache.
+      (PR #11)
+- [x] **R7** `onDidChangeDiagnostics` skips refreshes whose URI batch
+      doesn't touch a pipeline-check diagnostic — plus a
+      `lastFindingUris` set so cleared findings still trigger a
+      refresh. (PR #11)
 
 ### UX gaps
 
-- [ ] **R8** Wire `Diagnostic.code.target` into the leaf tooltip. The
-      server publishes the rule's docs URL; we read `code.value` and
-      throw the URL away. Add a docs link at the bottom of the leaf
-      tooltip (set `isTrusted = true` on the `MarkdownString`).
-- [ ] **R9** Status bar item showing critical/high counts. Click
-      reveals the Findings panel.
-- [ ] **R10** Rename `pipelineCheck.findings.refresh` — re-renders
-      from current diagnostics, doesn't trigger a fresh scan. Once
-      scan-workspace lands, have refresh call `scanWorkspace()`.
-- [ ] **R11** `CodeAction` provider for suppression comments.
-      Right-click a finding → "Suppress GHA-001 for this line" that
-      inserts the CLI's suppression syntax.
-- [ ] **R12** "Go to next/previous finding" commands with keybindings.
-- [ ] **R13** Set `Diagnostic.tags` for `Deprecated` /
-      `Unnecessary` where the rule indicates it. Server-side change.
+- [x] **R8** Leaf tooltip appends a `$(book) <rule-id> documentation`
+      link when the server publishes `Diagnostic.code.target`. (PR #11)
+- [x] **R9** Status bar item on the left at priority 100 showing the
+      top two non-zero severities (e.g. `$(shield) 3C 1H`). (PR #11)
+- [ ] **R10** Rename / repurpose `pipelineCheck.findings.refresh` to
+      call `scanWorkspace()` once the scan-workspace branch lands.
+      *(Blocked on scan-workspace merging.)*
+- [ ] **R11** `CodeAction` provider for suppression comments. *(Blocked
+      on the upstream pipeline-check CLI's suppression syntax.)*
+- [x] **R12** Alt+F8 / Shift+Alt+F8 jump between findings, wrap at
+      both ends. (PR #12)
+- [ ] **R13** Set `Diagnostic.tags` for `Deprecated` / `Unnecessary`
+      where the rule indicates it. *(Server-side change — file
+      upstream.)*
 
 ### Architecture
 
-- [ ] **R14** Extract the candidate-file pattern list from
-      `activationEvents`, `documentSelector`, and (post-merge)
-      `SCAN_PATTERNS` into a single shared TS module. Today the list
-      lives in three places.
-- [ ] **R15** Add `onCommand:pipelineCheck.scanWorkspace` to
-      `activationEvents` so opening an isolated file from outside the
-      workspace can still trigger activation.
-- [ ] **R16** Client-side structured logging into the output channel
-      with a `[client]` prefix. Breadcrumbs for bug reports.
+- [x] **R14** Trigger-pattern list extracted into `src/providers.ts`
+      (`PROVIDERS` map + `TRIGGER_PATTERNS`). A regression test asserts
+      the package.json `activationEvents` stay in lockstep. (PR #12)
+- [ ] **R15** `onCommand:pipelineCheck.scanWorkspace` activation
+      event. *(Blocked on scan-workspace merging.)*
+- [x] **R16** `[client] HH:MM:SS.mmm <level>` logging into the
+      LanguageClient's outputChannel. `withTiming(label, fn)` wraps
+      thunks with start/ok/failed breadcrumbs. (PR #12)
 
 ### Testing
 
-- [ ] **R17** `@vscode/test-electron` integration tests covering real
-      LSP publish and tree render.
-- [ ] **R18** Extract the `vi.mock("vscode", ...)` factory into a
-      shared `src/__testStubs__/vscode.ts`.
+- [x] **R17** `@vscode/test-electron` integration suite covering
+      activation, command registration, view registration, settings
+      schema, and the workspace-trust capability. (PR #14)
+- [x] **R18** `vi.mock("vscode")` factory extracted into
+      `src/__testStubs__/vscode.ts`. (PR #12)
 
 ### Marketplace
 
-- [ ] **R19** **Ship the screenshots** the HTML comment at
-      [README.md:13-25](README.md#L13-L25) has been waiting for since
-      v0.1.0. Highest-leverage marketplace conversion improvement.
-- [ ] **R20** CI check that `package.json#description` stays ≤ 145
-      characters (the marketplace-search truncation limit).
+- [ ] **R19** **Ship the screenshots** the HTML comment in README.md
+      has been waiting for since v0.1.0. *(Needs an interactive
+      VS Code session.)* See [docs/screenshots/README.md](docs/screenshots/README.md)
+      for the capture recipe.
+- [x] **R20** CI fails the build if `package.json#description`
+      exceeds 145 characters. Today's description is 141 chars. (PR #12)
 
 ### CI / release
 
-- [ ] **R21** Test matrix:
-      `[ubuntu-latest, windows-latest, macos-latest]`. The
-      `LF → CRLF` warnings on every git operation hint at the bugs.
-- [ ] **R22** Finish the eslint flat-config migration so the
-      drift between eslint v8 and TS 6 / esbuild 0.28 stops widening.
+- [x] **R21** Three-OS matrix: `[ubuntu-latest, windows-latest,
+      macos-latest]`. `npm audit` and the vsix upload pinned to
+      Linux. (PR #11)
+- [ ] **R22** Finish the eslint flat-config migration so drift between
+      eslint v8 and TS 6 / esbuild 0.28 / @types/node 25 stops
+      widening. *(WIP stash on the maintainer's `pr10` checkout.)*
 - [ ] **R23** Resolve the CodeQL default-setup conflict — disable
-      default setup or delete codeql.yml. Don't ship with a
-      permanently-red required check.
-- [ ] **R24** `vsce publish --pre-release` channel for the next
-      minor bump.
+      default setup or delete `codeql.yml`. *(Needs repo-settings
+      change.)*
+- [x] **R24** Pre-release channel via tag naming
+      (`vX.Y.Z-rc.N` → pre-release). (PR #13)
 
 ### Strategic
 
-- [ ] **R25** Per-provider toggles in settings.
-- [ ] **R26** Inline `CodeLens` summarising findings per file.
-- [ ] **R27** Workspace-level config file shared with the CLI.
+- [x] **R25** `pipelineCheck.disabledProviders` setting silences
+      providers wholesale. (PR #13)
+- [x] **R26** Inline `CodeLens` summary at the top of each scanned
+      file. (PR #13)
+- [ ] **R27** Workspace-level config file (`.pipeline-check.toml`)
+      shared with the CLI. *(Needs upstream coordination.)*
 - [ ] **R28** Opt-in telemetry (`vscode.env.isTelemetryEnabled`).
-- [ ] **R29** Scan-on-save mode.
+      *(Privacy-sensitive design decision; deferred pending product
+      direction.)*
+- [ ] **R29** Scan-on-save mode. *(Depends on scan-workspace
+      merging.)*
