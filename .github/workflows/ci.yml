@@ -63,6 +63,17 @@ jobs:
         # asserts activate/deactivate are exported.
         run: npm run smoke
 
+      - name: Integration tests (real VS Code)
+        # @vscode/test-electron boots a real extension host and runs
+        # the mocha suite under src/test/integration/. Verifies the
+        # activation / command / view contracts that unit tests can
+        # only approximate. Linux-only — VS Code needs an X server
+        # (xvfb-run) on headless runners; Windows/macOS in this
+        # matrix already exercise the platform-specific paths via the
+        # unit suite + bundle smoke.
+        if: matrix.os == 'ubuntu-latest'
+        run: xvfb-run -a npm run test:integration
+
       - name: npm audit (prod deps, high+)
         # Network-bound and platform-independent; one run is enough.
         if: matrix.os == 'ubuntu-latest'

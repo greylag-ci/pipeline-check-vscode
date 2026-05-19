@@ -1,0 +1,24 @@
+// Companion tsconfig for the @vscode/test-cli integration suite.
+// Compiles `src/test/integration/**/*.ts` to `out-test/` as commonjs
+// (the format the extension host's mocha runner expects). The
+// main tsconfig.json stays noEmit so the esbuild bundle remains the
+// single source of production output.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "out-test",
+    "rootDir": "src",
+    "noEmit": false,
+    "noEmitOnError": true,
+    "sourceMap": true,
+    // Pull in the mocha globals (`suite`, `test`, etc.) for the
+    // integration suite. The unit-test (vitest) suite doesn't see this
+    // tsconfig so its `describe`/`it` imports stay unaffected.
+    "types": ["mocha", "node"]
+  },
+  "include": ["src/test/integration/**/*"],
+  // Override the base tsconfig's exclude list — that one excludes
+  // `src/test/integration/**` to keep the main esbuild bundle clean,
+  // but this tsconfig is precisely for compiling that directory.
+  "exclude": ["node_modules", ".vscode-test", "out-test"]
+}
