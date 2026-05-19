@@ -1,17 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
      fill="none" stroke="currentColor" stroke-width="1.5"
      stroke-linecap="round" stroke-linejoin="round">
-  <!-- Inverted-Y pipeline glyph. Top node and bottom-right node are
-       filled (active / problem); bottom-left is hollow (clean). The
-       asymmetric fill carries the brand idea: pipelines whose
-       posture is not uniform. Three nodes also map to the three
-       group-by modes (severity, file, rule). currentColor + no
-       fill on the outline lets VS Code tint the icon for active /
-       inactive / hover states in the activity bar. -->
-  <circle cx="12" cy="4.25" r="1.9" fill="currentColor" stroke="none"/>
-  <path d="M12 6.5 V11.25"/>
-  <path d="M12 11.25 L7 16.5"/>
-  <path d="M12 11.25 L17 16.5"/>
-  <circle cx="7" cy="18.25" r="1.9"/>
-  <circle cx="17" cy="18.25" r="1.9" fill="currentColor" stroke="none"/>
+  <!-- Shield outline + check, monochrome — the activity-bar mirrors
+       the marketplace icon's shield motif. `currentColor` lets VS
+       Code tint the glyph: gray for inactive, white for active,
+       theme-foreground on hover. No brand colours here on purpose;
+       a custom hex would fight the activity-bar tint and look
+       wrong on every theme. -->
+  <!-- Shield silhouette. Top-centre cusp → top-right shoulder → right
+       side straight down → quadratic bezier sweep to the bottom apex →
+       symmetric sweep back up the left side → top-left shoulder. -->
+  <path d="M 12 2.5 L 20 5 L 20 11.5 Q 20 17 12 21 Q 4 17 4 11.5 L 4 5 Z"/>
+  <!-- Check mark inside the shield. Positioned to read at 24×24
+       without colliding with the shield outline. Same stroke-width
+       as the outline so the icon has uniform visual weight — same
+       convention every VS Code codicon follows. -->
+  <path d="M 8 12 L 11 15 L 16 9"/>
 </svg>
