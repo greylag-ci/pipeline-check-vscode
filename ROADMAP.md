@@ -4,18 +4,17 @@ Production-readiness work for the Pipeline-Check VS Code extension, queued
 from the pre-marketplace security and packaging review. Items are grouped
 by severity; tick the box when the change lands on `main`.
 
-The "must-haves before next publish" set is **C1, C2, H1, H2**. C1, C2,
-and H1 are landed on `prod-ready-hardening`; H2 is outstanding because
-it needs a manual repo-settings change (create the `marketplace`
-environment with required reviewers, then add `environment: marketplace`
-to the publish job).
+The "must-haves before next publish" set is **C1, C2, H1, H2**. All four
+are landed on `prod-ready-hardening`; the publish job is now gated on
+the `production` GitHub Environment.
 
 ### Maintainer action items before merging this branch
 
-1. **Create the `marketplace` GitHub Environment** with required
-   reviewers (H2). Without this, the workflow stays vulnerable to a
-   write-access compromise. Once created, add `environment: marketplace`
-   to the publish job — one-line follow-up.
+1. **Confirm the `production` GitHub Environment is configured** with
+   required reviewers and that `VSCE_PAT` / `OVSX_PAT` live as
+   environment secrets (not repo secrets). The workflow now references
+   `environment: production`; the gate is only as strong as the
+   environment's review rules.
 2. **Enable Private Vulnerability Reporting** on the repo (Settings →
    Code security). Without it, the link in [SECURITY.md](SECURITY.md)
    404s and external reporters have nowhere private to file.
@@ -140,18 +139,14 @@ between releases would exfiltrate both PATs.
 `workflow_dispatch` accepts a `tag` input and anyone with push access can
 fire it. PATs are repo-scoped, so any workflow can read them.
 
-**Manual repo-settings work — cannot land from a branch.** Adding
-`environment: marketplace` to the workflow before the environment
-exists would just fail every publish. Once the env is created, the
-follow-up branch change is a single line.
-
-- [ ] Maintainer: Settings → Environments → New environment
-      "marketplace". Add required reviewers (yourself + any other
-      maintainer). Move `VSCE_PAT` / `OVSX_PAT` from repo secrets to
-      this environment.
-- [ ] Then in a one-line PR: add
-      `environment: marketplace` to the `publish` job in
+- [x] Maintainer created the `production` GitHub Environment with
+      required reviewers; `VSCE_PAT` / `OVSX_PAT` live as environment
+      secrets so any workflow that does not target this environment
+      cannot read them.
+- [x] Added `environment: production` to the `publish` job in
       [.github/workflows/publish.yml](.github/workflows/publish.yml).
+      A `workflow_dispatch` or tag push now stalls at the environment
+      gate until a reviewer approves the run.
 
 ### H3 — Tag-driven publish doesn't verify the tag is on `main`
 

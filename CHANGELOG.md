@@ -63,7 +63,9 @@ commit collapses this section into `## [X.Y.Z] — <date>`.
   `git merge-base` check that refuses to publish a tag that isn't on
   `main`, added a CHANGELOG-fold check, and narrowed workflow-level
   permissions to `contents: read` with the publish job opting up to
-  `contents: write`.
+  `contents: write`. The publish job is gated on the `production`
+  GitHub Environment so `VSCE_PAT` / `OVSX_PAT` are only readable from
+  a run that has cleared required reviewers.
 - **Added [SECURITY.md](SECURITY.md)** with GitHub Private Vulnerability
   Reporting as the disclosure channel, response SLAs, and a published
   threat model.
