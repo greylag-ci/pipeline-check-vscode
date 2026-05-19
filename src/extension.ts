@@ -26,14 +26,15 @@ import {
   installInTerminal,
 } from "./install";
 import * as clientLog from "./log";
+import { startWithTimeout } from "./lspStart";
 import { setLspReady } from "./lspState";
+import { transformDiagnostics } from "./middleware";
 import { goToFinding } from "./navigate";
 import {
   providerForPath,
-  type ProviderId,
   TRIGGER_DOCUMENT_SELECTOR,
 } from "./providers";
-import { filterByThreshold } from "./severityFilter";
+import { createScanOnSaveHandler } from "./scanOnSave";
 import { registerStatusBar } from "./statusBar";
 import { scanWorkspace } from "./workspaceScan";
 import { showWhatsNewIfUpgraded } from "./whatsNew";
@@ -155,30 +156,21 @@ function buildClient(): LanguageClient {
     },
     outputChannelName: OUTPUT_CHANNEL,
     middleware: {
-      // Drop diagnostics below the user-configured severity threshold
-      // before they reach VS Code's Problems panel. The config is
-      // re-read on each publish so a settings change takes effect on
-      // the next scan without needing a server restart. Diagnostics
-      // whose `data.severity` is missing (older server, or a
-      // not-from-pipeline-check publish that somehow flowed through)
-      // pass through unconditionally so the filter never hides
-      // legitimate signal when the metadata is absent.
+      // Two-stage filter (composition lives in middleware.ts): drop
+      // every diagnostic for a URI whose provider the user has
+      // silenced via `disabledProviders`, otherwise drop those below
+      // the configured `severityThreshold`. Re-reads the config on
+      // each publish so a settings change takes effect on the next
+      // scan without a server restart.
       handleDiagnostics: (uri, diagnostics, next) => {
         const config = vscode.workspace.getConfiguration("pipelineCheck");
-        // Per-provider toggle: if this URI maps to a provider the
-        // user has disabled, drop every diagnostic for it. We still
-        // accept the publish (so a future "unset disable" causes a
-        // fresh publish to reach us), we just blank the list.
-        const disabled = new Set(
-          config.get<string[]>("disabledProviders", []) as ProviderId[],
+        next(
+          uri,
+          transformDiagnostics(uri, diagnostics, {
+            disabledProviders: config.get<string[]>("disabledProviders", []),
+            severityThreshold: config.get<string>("severityThreshold", "low"),
+          }),
         );
-        const provider = providerForPath(uri.fsPath);
-        if (provider && disabled.has(provider)) {
-          next(uri, []);
-          return;
-        }
-        const threshold = config.get<string>("severityThreshold", "low");
-        next(uri, filterByThreshold(diagnostics, threshold));
       },
     },
   };
@@ -301,41 +293,6 @@ async function stopClient(): Promise<void> {
     // If stop() didn't win the race the client is stranded; dispose
     // explicitly so its subscriptions don't outlive us.
     local.dispose?.();
-  }
-}
-
-/**
- * Race the LSP startup handshake against a hard ceiling. On timeout
- * we call `client.stop()` to kill the stranded subprocess (best
- * effort — the server may already be hung past saving) and throw a
- * recognisable error the caller's catch surfaces in the failure
- * toast.
- */
-async function startWithTimeout(
-  c: LanguageClient,
-  timeoutMs: number,
-): Promise<void> {
-  let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      // Fire-and-forget the cleanup stop(); we don't await it because
-      // a hung interpreter probably won't respond, and the timeout
-      // toast wants to be on screen now, not in 30 seconds when stop
-      // gives up.
-      void c.stop().catch(() => undefined);
-      reject(
-        new Error(
-          `Language server did not finish startup within ${Math.round(timeoutMs / 1000)}s. Check the server log; common causes are an empty pipelineCheck.serverArgs, an interpreter that drops into the REPL, or a corrupted pipeline_check install.`,
-        ),
-      );
-    }, timeoutMs);
-  });
-  try {
-    await Promise.race([c.start(), timeout]);
-  } finally {
-    if (timer) {
-      clearTimeout(timer);
-    }
   }
 }
 
@@ -518,32 +475,18 @@ export async function activate(
   // `didSave`, so this is purely about picking up cross-file effects in
   // *other* CI files (a Jenkinsfile that includes the just-edited
   // library, a GHA workflow that calls the just-edited composite
-  // action). A simple in-flight guard prevents save-storms (autosave,
-  // Save All) from queueing redundant scans.
-  let scanOnSaveBusy = false;
-  context.subscriptions.push(
-    vscode.workspace.onDidSaveTextDocument(async (doc) => {
-      const config = vscode.workspace.getConfiguration("pipelineCheck");
-      if (!config.get<boolean>("scanOnSave", false)) {
-        return;
-      }
-      // Only react to saves of CI-relevant files. providerForPath
-      // returns `undefined` for anything that doesn't match our
-      // glob patterns, so package.json / random YAML never triggers.
-      if (!providerForPath(doc.uri.fsPath)) {
-        return;
-      }
-      if (scanOnSaveBusy) {
-        return;
-      }
-      scanOnSaveBusy = true;
-      try {
-        await scanWorkspace({ quiet: true });
-      } finally {
-        scanOnSaveBusy = false;
-      }
-    }),
-  );
+  // action). Busy-guard semantics + the gate logic live in
+  // src/scanOnSave.ts so they're unit-testable without a real save
+  // event source; this wiring just plumbs VS Code's dependencies in.
+  const onSave = createScanOnSaveHandler({
+    isEnabled: () =>
+      vscode.workspace
+        .getConfiguration("pipelineCheck")
+        .get<boolean>("scanOnSave", false),
+    isPipelineFile: (fsPath) => providerForPath(fsPath) !== undefined,
+    scan: () => scanWorkspace({ quiet: true }),
+  });
+  context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(onSave));
 
   // Fire-and-forget the one-time "what's new" toast for users who
   // just upgraded. Detached so a not-yet-dismissed notification never
