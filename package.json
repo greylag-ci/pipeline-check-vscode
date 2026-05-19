@@ -41,7 +41,6 @@
   "homepage": "https://github.com/greylag-ci/pipeline-check-vscode#readme",
   "main": "./dist/extension.js",
   "activationEvents": [
-    "onStartupFinished",
     "workspaceContains:**/.github/workflows/*.yml",
     "workspaceContains:**/.github/workflows/*.yaml",
     "workspaceContains:**/.gitlab-ci.yml",
@@ -59,7 +58,7 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "Pipeline-Check spawns the configured Python interpreter to analyze workflow files. In untrusted workspaces the extension stays inactive until the workspace is trusted."
+      "description": "Pipeline-Check spawns the configured Python interpreter (defaults to `python -m pipeline_check.lsp`) to analyze workflow files. The `serverCommand` and `serverArgs` settings — the only inputs that influence what gets executed — are scoped `machine-overridable`, so a workspace cannot silently override them; VS Code surfaces an explicit prompt before any workspace-level value is applied. No other workspace-controlled input reaches a process-spawning code path."
     },
     "virtualWorkspaces": false
   },
@@ -85,7 +84,7 @@
     "viewsWelcome": [
       {
         "view": "pipelineCheck.findings",
-        "contents": "Pipeline-Check scans CI/CD configurations against OWASP Top 10 CI/CD risks and 14 other compliance frameworks.\n\nRequires Python + `pipeline-check[lsp]` on PATH.\n[Copy install command](command:pipelineCheck.copyInstallCommand)\n\nOpen a workflow, Dockerfile, or other supported config and findings will appear here.\n\nPress `Alt+F8` (or `Shift+Alt+F8`) to step through findings in the editor.\n\n---\n\nNot seeing expected findings?\n[Restart Language Server](command:pipelineCheck.restart) · [Open Log](command:pipelineCheck.showLog)"
+        "contents": "Pipeline-Check scans CI/CD configurations against OWASP Top 10 CI/CD risks and 14 other compliance frameworks.\n\nRequires Python + `pipeline-check[lsp]` on PATH.\n[Copy install command](command:pipelineCheck.copyInstallCommand)\n\n[Scan workspace](command:pipelineCheck.scanWorkspace) to populate this panel without opening every file by hand. Otherwise findings show up as you open supported configs.\n\nPress `Alt+F8` (or `Shift+Alt+F8`) to step through findings in the editor.\n\n---\n\nNot seeing expected findings?\n[Restart Language Server](command:pipelineCheck.restart) · [Open Log](command:pipelineCheck.showLog)"
       }
     ],
     "commands": [
@@ -103,6 +102,12 @@
         "command": "pipelineCheck.copyInstallCommand",
         "title": "Copy LSP Install Command",
         "category": "Pipeline-Check"
+      },
+      {
+        "command": "pipelineCheck.scanWorkspace",
+        "title": "Scan Workspace",
+        "category": "Pipeline-Check",
+        "icon": "$(play)"
       },
       {
         "command": "pipelineCheck.findings.refresh",
@@ -151,6 +156,11 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "pipelineCheck.scanWorkspace",
+          "when": "view == pipelineCheck.findings",
+          "group": "navigation@0"
+        },
         {
           "command": "pipelineCheck.findings.changeGrouping",
           "when": "view == pipelineCheck.findings",

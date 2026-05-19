@@ -154,6 +154,30 @@ function readSeverity(diag: vscode.Diagnostic): SeverityName {
   }
 }
 
+/**
+ * Pick the status bar's background color from the per-severity tally.
+ *
+ *   - any CRITICAL  → `statusBarItem.errorBackground`   (red)
+ *   - any HIGH      → `statusBarItem.warningBackground` (yellow)
+ *   - everything else → `undefined` (default fg, blends with the bar)
+ *
+ * The two named ThemeColor tokens are VS Code's standard status-bar
+ * severity colors — ESLint and Error Lens use the same ones, so the
+ * visual language reads correctly to existing VS Code users without
+ * any per-theme custom CSS.
+ */
+export function pickBackgroundColor(
+  c: SeverityCounts,
+): vscode.ThemeColor | undefined {
+  if (c.CRITICAL > 0) {
+    return new vscode.ThemeColor("statusBarItem.errorBackground");
+  }
+  if (c.HIGH > 0) {
+    return new vscode.ThemeColor("statusBarItem.warningBackground");
+  }
+  return undefined;
+}
+
 // File patterns that suggest the current workspace is worth showing
 // the status bar in. Mirrors providers.ts's TRIGGER_PATTERNS — kept
 // inline here so the status bar can ship without a circular import
@@ -198,6 +222,7 @@ export function registerStatusBar(
     item.accessibilityInformation = {
       label: formatStatusBarAccessibilityLabel(counts),
     };
+    item.backgroundColor = pickBackgroundColor(counts);
     const total =
       counts.CRITICAL + counts.HIGH + counts.MEDIUM + counts.LOW + counts.INFO;
     if (total > 0) relevant = true;

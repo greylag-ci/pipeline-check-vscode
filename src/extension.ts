@@ -29,6 +29,8 @@ import {
 } from "./providers";
 import { filterByThreshold } from "./severityFilter";
 import { registerStatusBar } from "./statusBar";
+import { scanWorkspace } from "./workspaceScan";
+import { showWhatsNewIfUpgraded } from "./whatsNew";
 
 // Group-mode options offered by the Findings panel's "Change
 // Grouping" button. Labels are user-facing; descriptions are the
@@ -283,8 +285,19 @@ export async function activate(
   );
   context.subscriptions.push(
     findingsView,
+    // Workspace scan: open every candidate file so the LSP runs its
+    // didOpen pipeline on each. Findings panel updates as the server
+    // publishes; no extra state to manage.
+    vscode.commands.registerCommand("pipelineCheck.scanWorkspace", () =>
+      scanWorkspace(),
+    ),
+    // "Refresh Findings" was historically a tree-only re-render. Now
+    // that we have a real scan command, refresh runs an actual scan so
+    // the button matches the user's mental model — clicking "refresh"
+    // should fetch fresh data, not re-paint stale data. The tree
+    // updates automatically as scan publishes arrive (R10).
     vscode.commands.registerCommand("pipelineCheck.findings.refresh", () =>
-      findingsProvider.refresh(),
+      scanWorkspace(),
     ),
     vscode.commands.registerCommand(
       "pipelineCheck.findings.changeGrouping",
@@ -364,6 +377,13 @@ export async function activate(
   );
 
   await startClient();
+
+  // Fire-and-forget the one-time "what's new" toast for users who
+  // just upgraded. Detached so a not-yet-dismissed notification never
+  // blocks activation (same lesson as the LSP-failure toast). The
+  // function persists the seen-version before showing, so a missed
+  // notification doesn't repeat next launch.
+  void showWhatsNewIfUpgraded(context, context.extension.packageJSON.version);
 }
 
 export async function deactivate(): Promise<void> {

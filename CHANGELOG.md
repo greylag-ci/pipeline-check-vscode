@@ -11,6 +11,45 @@ versions follow [SemVer](https://semver.org/).
 > section **above** Unreleased, or remove the Unreleased block for the
 > release commit. Otherwise the GitHub release ships boilerplate.
 
+## [Unreleased]
+
+### Added
+
+- **Status bar background colour reflects severity.** A workspace with
+  any CRITICAL finding tints the bar to `statusBarItem.errorBackground`
+  (red in the default themes); a workspace with HIGH but no CRITICAL
+  tints to `statusBarItem.warningBackground` (yellow). MEDIUM / LOW /
+  INFO keep the default fg colour so a "1 medium" workspace doesn't
+  shout. Same ThemeColor tokens ESLint and Error Lens use, so the
+  visual language reads correctly to any existing VS Code user.
+- **"What's new" notification on upgrade.** First activation after a
+  version bump shows a one-time toast — "Pipeline-Check 0.X.Y is here
+  …" — with a "See release notes" button that opens the matching
+  GitHub release. Persists the seen-version *before* showing so a
+  missed dismissal doesn't loop next launch. Suppressed when the
+  stored version equals the manifest version (same launch).
+- **`Pipeline-Check: Scan Workspace` command.** Walks every CI/config
+  file in the workspace (matching the same patterns the LSP's
+  `documentSelector` uses), opens each via
+  `vscode.workspace.openTextDocument` so the LSP's `didOpen` pipeline
+  picks them up, and lets the Findings panel re-render from the
+  diagnostic stream as scans complete. Progress toast with
+  cancellation; partial failures (read errors, unsupported encodings)
+  are counted but don't abort the scan. Surfaced from a `$(play)`
+  button on the Findings view title bar, the Command Palette, and a
+  link in the Findings welcome state. (R10, R15)
+
+### Changed
+
+- **"Refresh Findings" now triggers a real scan** instead of just
+  re-painting the tree from already-published diagnostics. Matches
+  the user's mental model: clicking a refresh icon should fetch new
+  data, not re-render stale data. (R10)
+- **`SCAN_PATTERNS` removed in favour of `TRIGGER_PATTERNS`** from
+  `providers.ts`. The single source of truth for which files are
+  CI-relevant now drives the documentSelector, the activationEvents,
+  and the workspace scan — three surfaces that used to drift apart.
+
 ## [0.2.0] — 2026-05-19
 
 Closes 24 of 29 items from the 2026-05-19 in-depth UX/code review.
