@@ -18,7 +18,17 @@ import {
   ServerOptions,
   TransportKind,
 } from "vscode-languageclient/node";
+import { FindingsCodeLensProvider } from "./codeLens";
 import { FindingsTreeProvider, GroupMode } from "./findingsView";
+import * as clientLog from "./log";
+import { goToFinding } from "./navigate";
+import {
+  providerForPath,
+  type ProviderId,
+  TRIGGER_DOCUMENT_SELECTOR,
+} from "./providers";
+import { filterByThreshold } from "./severityFilter";
+import { registerStatusBar } from "./statusBar";
 
 // Group-mode options offered by the Findings panel's "Change
 // Grouping" button. Labels are user-facing; descriptions are the
@@ -69,11 +79,20 @@ async function changeGrouping(
     provider.setGroupMode(choice.mode);
   }
 }
-import { filterByThreshold } from "./severityFilter";
-
 const LANGUAGE_ID = "pipelineCheck";
 const LANGUAGE_NAME = "Pipeline-Check";
 const OUTPUT_CHANNEL = "Pipeline-Check";
+
+// Structural shape of a Findings-tree leaf node, used by the
+// context-menu commands. The real LeafNode lives in findingsView.ts;
+// duplicating just the fields the commands read keeps extension.ts
+// independent of the tree's internal type definitions.
+type LeafLike = {
+  readonly finding?: {
+    readonly ruleId?: string;
+    readonly docsUrl?: string;
+  };
+};
 
 let client: LanguageClient | undefined;
 
@@ -95,21 +114,11 @@ function buildClient(): LanguageClient {
   // in the first place — smaller cross-section, no dependency on whether
   // the user has the official GitHub Actions extension installed
   // (which would otherwise hijack the `github-actions-workflow`
-  // language ID for `.github/workflows/*.yml`).
+  // language ID for `.github/workflows/*.yml`). The pattern list itself
+  // lives in providers.ts so the documentSelector, activationEvents,
+  // and the workspace-scan command can't drift apart.
   const clientOptions: LanguageClientOptions = {
-    documentSelector: [
-      { scheme: "file", pattern: "**/.github/workflows/*.{yml,yaml}" },
-      { scheme: "file", pattern: "**/.gitlab-ci.yml" },
-      { scheme: "file", pattern: "**/azure-pipelines.yml" },
-      { scheme: "file", pattern: "**/bitbucket-pipelines.yml" },
-      { scheme: "file", pattern: "**/.circleci/config.yml" },
-      { scheme: "file", pattern: "**/cloudbuild.yaml" },
-      { scheme: "file", pattern: "**/.buildkite/pipeline.yml" },
-      { scheme: "file", pattern: "**/.drone.{yml,yaml}" },
-      { scheme: "file", pattern: "**/Jenkinsfile" },
-      { scheme: "file", pattern: "**/Dockerfile" },
-      { scheme: "file", pattern: "**/Containerfile" },
-    ],
+    documentSelector: [...TRIGGER_DOCUMENT_SELECTOR],
     synchronize: {
       configurationSection: "pipelineCheck",
     },
@@ -124,9 +133,20 @@ function buildClient(): LanguageClient {
       // pass through unconditionally so the filter never hides
       // legitimate signal when the metadata is absent.
       handleDiagnostics: (uri, diagnostics, next) => {
-        const threshold = vscode.workspace
-          .getConfiguration("pipelineCheck")
-          .get<string>("severityThreshold", "low");
+        const config = vscode.workspace.getConfiguration("pipelineCheck");
+        // Per-provider toggle: if this URI maps to a provider the
+        // user has disabled, drop every diagnostic for it. We still
+        // accept the publish (so a future "unset disable" causes a
+        // fresh publish to reach us), we just blank the list.
+        const disabled = new Set(
+          config.get<string[]>("disabledProviders", []) as ProviderId[],
+        );
+        const provider = providerForPath(uri.fsPath);
+        if (provider && disabled.has(provider)) {
+          next(uri, []);
+          return;
+        }
+        const threshold = config.get<string>("severityThreshold", "low");
         next(uri, filterByThreshold(diagnostics, threshold));
       },
     },
@@ -153,8 +173,14 @@ async function startClient(): Promise<void> {
   // drop the broken client on failure (the "Open server log" action
   // below still needs to focus it to surface the server's traceback).
   const outputChannel: vscode.OutputChannel = client.outputChannel;
+  // Point the client-side logger at the same channel the LSP server
+  // writes to, so [client] and [server] lines interleave with shared
+  // timestamps — much easier to read when triaging a bug report.
+  clientLog.setLogChannel(outputChannel);
   try {
+    clientLog.info("language server: starting");
     await client.start();
+    clientLog.info("language server: started");
   } catch (err) {
     // The most common cause is `python -m pipeline_check.lsp` failing:
     // either Python is not on PATH or the [lsp] extra is not installed.
@@ -162,25 +188,44 @@ async function startClient(): Promise<void> {
     // actions so the user can act on either without re-reading the
     // notification body. The notification chrome already shows the
     // extension name, so the message body doesn't repeat it.
+    //
+    // The notification is fire-and-forget: `showErrorMessage` resolves
+    // only when the user clicks a button or closes the toast, and
+    // `activate()` already awaits this path. Awaiting here would block
+    // activation indefinitely whenever nobody is around to click
+    // (CI, automation, headless extension host). Detaching keeps the
+    // user's buttons live while letting startClient return.
     const message = err instanceof Error ? err.message : String(err);
-    const choice = await vscode.window.showErrorMessage(
-      `Language server failed to start (${message}).`,
-      "Copy install command",
-      "Open server log",
-    );
-    if (choice === "Copy install command") {
-      await vscode.env.clipboard.writeText('pip install "pipeline-check[lsp]"');
-      vscode.window.showInformationMessage(
-        'Copied: pip install "pipeline-check[lsp]"',
-      );
-    } else if (choice === "Open server log") {
-      outputChannel.show();
-    }
+    clientLog.error(`language server: failed to start — ${message}`);
+    void vscode.window
+      .showErrorMessage(
+        `Language server failed to start (${message}).`,
+        "Copy install command",
+        "Open server log",
+      )
+      .then(async (choice) => {
+        if (choice === "Copy install command") {
+          await vscode.env.clipboard.writeText(
+            'pip install "pipeline-check[lsp]"',
+          );
+          void vscode.window.showInformationMessage(
+            'Copied: pip install "pipeline-check[lsp]"',
+          );
+        } else if (choice === "Open server log") {
+          outputChannel.show();
+        }
+      });
     // Drop the broken client so a subsequent restart starts fresh
     // rather than trying to recover from a half-initialised state.
     client = undefined;
   }
 }
+
+// Hard ceiling on how long deactivate / restart waits for the LSP
+// child to shut down cleanly. A deadlocked server would otherwise
+// hold the deactivate path indefinitely and VS Code reports "Window
+// not responding".
+const STOP_TIMEOUT_MS = 2000;
 
 async function stopClient(): Promise<void> {
   if (!client) {
@@ -188,7 +233,22 @@ async function stopClient(): Promise<void> {
   }
   const local = client;
   client = undefined;
-  await local.stop();
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      local.stop(),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, STOP_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+    // If stop() didn't win the race the client is stranded; dispose
+    // explicitly so its subscriptions don't outlive us.
+    local.dispose?.();
+  }
 }
 
 export async function activate(
@@ -208,6 +268,19 @@ export async function activate(
   // badge. Handing the view back closes the loop and triggers an
   // initial badge update.
   findingsProvider.setTreeView(findingsView);
+  // Status bar item lives at the bottom-left and shows the per-
+  // severity tally. Click reveals the Findings panel. registerStatusBar
+  // pushes the item onto context.subscriptions internally.
+  registerStatusBar(context);
+  // CodeLens summary at the top of every scanned file. Reads from the
+  // same diagnostic stream the tree does; click navigates to the
+  // Findings panel for drill-down.
+  context.subscriptions.push(
+    vscode.languages.registerCodeLensProvider(
+      [...TRIGGER_DOCUMENT_SELECTOR],
+      new FindingsCodeLensProvider(context),
+    ),
+  );
   context.subscriptions.push(
     findingsView,
     vscode.commands.registerCommand("pipelineCheck.findings.refresh", () =>
@@ -217,10 +290,66 @@ export async function activate(
       "pipelineCheck.findings.changeGrouping",
       () => changeGrouping(findingsProvider),
     ),
+    // Context-menu entries on a Findings tree leaf. VS Code passes the
+    // TreeNode as the first argument; we read the `finding` shape off
+    // it. Both commands are gated behind `viewItem == pipelineCheck.finding`
+    // in package.json so the node is always a leaf when these fire.
+    vscode.commands.registerCommand(
+      "pipelineCheck.findings.copyRuleId",
+      async (node: LeafLike | undefined) => {
+        const id = node?.finding?.ruleId?.trim();
+        if (!id) {
+          void vscode.window.showInformationMessage(
+            "Pipeline-Check: this finding has no rule ID.",
+          );
+          return;
+        }
+        await vscode.env.clipboard.writeText(id);
+        void vscode.window.showInformationMessage(`Copied ${id} to clipboard.`);
+      },
+    ),
+    vscode.commands.registerCommand(
+      "pipelineCheck.findings.openRuleDocs",
+      async (node: LeafLike | undefined) => {
+        const url = node?.finding?.docsUrl?.trim();
+        if (!url) {
+          void vscode.window.showInformationMessage(
+            "Pipeline-Check: no documentation URL was published for this rule.",
+          );
+          return;
+        }
+        await vscode.env.openExternal(vscode.Uri.parse(url));
+      },
+    ),
+    // Copy-install-command also lives in the welcome-state and is
+    // promoted to a top-level command so users can re-find it after
+    // dismissing the first-run notification.
+    vscode.commands.registerCommand(
+      "pipelineCheck.copyInstallCommand",
+      async () => {
+        await vscode.env.clipboard.writeText(
+          'pip install "pipeline-check[lsp]"',
+        );
+        void vscode.window.showInformationMessage(
+          'Copied: pip install "pipeline-check[lsp]"',
+        );
+      },
+    ),
+    vscode.commands.registerCommand("pipelineCheck.goToNextFinding", () =>
+      goToFinding("next"),
+    ),
+    vscode.commands.registerCommand("pipelineCheck.goToPreviousFinding", () =>
+      goToFinding("previous"),
+    ),
     vscode.commands.registerCommand("pipelineCheck.restart", async () => {
       await stopClient();
       await startClient();
-      vscode.window.showInformationMessage("Language server restarted.");
+      // Only confirm success when startClient left a live client behind.
+      // If start failed it surfaced its own error toast; we'd otherwise
+      // show "failed to start" and "restarted" at the same time.
+      if (client) {
+        vscode.window.showInformationMessage("Language server restarted.");
+      }
     }),
     vscode.commands.registerCommand("pipelineCheck.showLog", () => {
       if (client?.outputChannel) {

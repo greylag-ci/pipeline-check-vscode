@@ -17,7 +17,17 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # The extension is cross-platform; the LSP child-process spawn
+    # path, the bundle loader, and several file-path helpers are all
+    # Windows-sensitive. Running the gate on three OSes catches the
+    # LF/CRLF and path-separator bugs that single-OS CI silently
+    # ignores. The matrix shares the same step list — only the vsix
+    # upload and the network-bound npm audit are pinned to Linux.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
 
@@ -30,6 +40,15 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Marketplace description length
+        # The marketplace truncates listing descriptions around 145
+        # characters in search results. Anything longer loses signal
+        # before users click through. The current copy hugs the limit
+        # deliberately — this step keeps future edits honest.
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          node -e 'const d=require("./package.json").description; if(d.length>145){console.error("description is "+d.length+" chars (max 145):",d);process.exit(1)}'
 
       - name: TypeScript compile
         run: npm run compile
@@ -44,17 +63,31 @@ jobs:
         # asserts activate/deactivate are exported.
         run: npm run smoke
 
+      - name: Integration tests (real VS Code)
+        # @vscode/test-electron boots a real extension host and runs
+        # the mocha suite under src/test/integration/. Verifies the
+        # activation / command / view contracts that unit tests can
+        # only approximate. Linux-only — VS Code needs an X server
+        # (xvfb-run) on headless runners; Windows/macOS in this
+        # matrix already exercise the platform-specific paths via the
+        # unit suite + bundle smoke.
+        if: matrix.os == 'ubuntu-latest'
+        run: xvfb-run -a npm run test:integration
+
       - name: npm audit (prod deps, high+)
+        # Network-bound and platform-independent; one run is enough.
+        if: matrix.os == 'ubuntu-latest'
         run: npm audit --omit=dev --audit-level=high
 
       - name: Verify vsix packs cleanly
         # vsce is a pinned devDependency (see package.json) — Dependabot
         # bumps it via the npm config. `npm ci` has already installed it.
-        run: |
-          npx vsce package --out pipeline-check.vsix
-          ls -lh pipeline-check.vsix
+        run: npx vsce package --out pipeline-check.vsix
 
       - uses: actions/upload-artifact@v7
+        # Single artefact upload from the Linux job; identical-name
+        # uploads from the matrix would collide.
+        if: matrix.os == 'ubuntu-latest'
         with:
           name: vsix
           path: pipeline-check.vsix

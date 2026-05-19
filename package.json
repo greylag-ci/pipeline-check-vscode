@@ -2,7 +2,7 @@
   "name": "pipeline-check",
   "displayName": "Pipeline-Check",
   "description": "Lint CI/CD pipelines for 22 providers against OWASP Top 10 CI/CD Risks and 14 other compliance frameworks. 810+ rules, inline in your editor.",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "greylag-ci",
   "license": "MIT",
   "icon": "icon.png",
@@ -41,6 +41,7 @@
   "homepage": "https://github.com/greylag-ci/pipeline-check-vscode#readme",
   "main": "./dist/extension.js",
   "activationEvents": [
+    "onStartupFinished",
     "workspaceContains:**/.github/workflows/*.yml",
     "workspaceContains:**/.github/workflows/*.yaml",
     "workspaceContains:**/.gitlab-ci.yml",
@@ -84,23 +85,28 @@
     "viewsWelcome": [
       {
         "view": "pipelineCheck.findings",
-        "contents": "Pipeline-Check scans CI/CD configurations for OWASP Top 10 CI/CD risks and 14 other compliance frameworks.\n\nOpen a workflow, Dockerfile, or other supported config and findings will appear here.\n\nNot seeing findings on a file you expect to be scanned? [Restart the language server](command:pipelineCheck.restart) or [view the log](command:pipelineCheck.showLog)."
+        "contents": "Pipeline-Check scans CI/CD configurations against OWASP Top 10 CI/CD risks and 14 other compliance frameworks.\n\nRequires Python + `pipeline-check[lsp]` on PATH.\n[Copy install command](command:pipelineCheck.copyInstallCommand)\n\nOpen a workflow, Dockerfile, or other supported config and findings will appear here.\n\nPress `Alt+F8` (or `Shift+Alt+F8`) to step through findings in the editor.\n\n---\n\nNot seeing expected findings?\n[Restart Language Server](command:pipelineCheck.restart) · [Open Log](command:pipelineCheck.showLog)"
       }
     ],
     "commands": [
       {
         "command": "pipelineCheck.restart",
-        "title": "Restart language server",
+        "title": "Restart Language Server",
         "category": "Pipeline-Check"
       },
       {
         "command": "pipelineCheck.showLog",
-        "title": "Show language server output",
+        "title": "Show Language Server Output",
+        "category": "Pipeline-Check"
+      },
+      {
+        "command": "pipelineCheck.copyInstallCommand",
+        "title": "Copy LSP Install Command",
         "category": "Pipeline-Check"
       },
       {
         "command": "pipelineCheck.findings.refresh",
-        "title": "Refresh",
+        "title": "Refresh Findings",
         "category": "Pipeline-Check",
         "icon": "$(refresh)"
       },
@@ -109,6 +115,38 @@
         "title": "Change Grouping",
         "category": "Pipeline-Check",
         "icon": "$(list-tree)"
+      },
+      {
+        "command": "pipelineCheck.findings.copyRuleId",
+        "title": "Copy Rule ID",
+        "category": "Pipeline-Check"
+      },
+      {
+        "command": "pipelineCheck.findings.openRuleDocs",
+        "title": "Open Rule Documentation",
+        "category": "Pipeline-Check"
+      },
+      {
+        "command": "pipelineCheck.goToNextFinding",
+        "title": "Go to Next Finding",
+        "category": "Pipeline-Check"
+      },
+      {
+        "command": "pipelineCheck.goToPreviousFinding",
+        "title": "Go to Previous Finding",
+        "category": "Pipeline-Check"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "pipelineCheck.goToNextFinding",
+        "key": "alt+f8",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "pipelineCheck.goToPreviousFinding",
+        "key": "shift+alt+f8",
+        "when": "editorTextFocus"
       }
     ],
     "menus": {
@@ -124,6 +162,18 @@
           "group": "navigation@9"
         }
       ],
+      "view/item/context": [
+        {
+          "command": "pipelineCheck.findings.openRuleDocs",
+          "when": "view == pipelineCheck.findings && viewItem == pipelineCheck.finding",
+          "group": "navigation@1"
+        },
+        {
+          "command": "pipelineCheck.findings.copyRuleId",
+          "when": "view == pipelineCheck.findings && viewItem == pipelineCheck.finding",
+          "group": "1_copy@1"
+        }
+      ],
       "commandPalette": [
         {
           "command": "pipelineCheck.findings.refresh",
@@ -132,6 +182,14 @@
         {
           "command": "pipelineCheck.findings.changeGrouping",
           "when": "view == pipelineCheck.findings"
+        },
+        {
+          "command": "pipelineCheck.findings.copyRuleId",
+          "when": "false"
+        },
+        {
+          "command": "pipelineCheck.findings.openRuleDocs",
+          "when": "false"
         }
       ]
     },
@@ -156,6 +214,32 @@
           ],
           "scope": "machine-overridable",
           "markdownDescription": "Arguments passed to the server command. Default invokes the module via `python -m pipeline_check.lsp`. Scope is `machine-overridable`: workspace overrides require an explicit prompt, since arbitrary args can execute arbitrary code (e.g. `-c \"...\"`)."
+        },
+        "pipelineCheck.disabledProviders": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "github-actions",
+              "gitlab",
+              "azure",
+              "bitbucket",
+              "circleci",
+              "cloud-build",
+              "buildkite",
+              "drone",
+              "jenkins",
+              "dockerfile"
+            ]
+          },
+          "uniqueItems": true,
+          "default": [],
+          "markdownDescription": "Providers to silence. Diagnostics for files matching a disabled provider's path glob are dropped before they reach the editor — useful in a monorepo where Pipeline-Check would otherwise lint a Dockerfile from a sub-project that has its own lint pipeline. Empty by default; everything scans. `dockerfile` covers both `Dockerfile` and `Containerfile`."
+        },
+        "pipelineCheck.codeLens.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show the `Pipeline-Check: N critical · M high` summary CodeLens at the top of each scanned file. Turn off if you find the line-1 lens intrusive — the editor gutter, the Findings panel, and the status bar still surface the same counts."
         },
         "pipelineCheck.severityThreshold": {
           "type": "string",
@@ -191,6 +275,8 @@
     "lint": "eslint src --ext ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:integration:compile": "tsc -p tsconfig.integration.json",
+    "test:integration": "npm run bundle:dev && npm run test:integration:compile && vscode-test",
     "smoke": "node scripts/smoke.js",
     "package": "vsce package",
     "publish:vsce": "vsce publish --packagePath",
@@ -200,13 +286,17 @@
     "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {
+    "@types/mocha": "^10.0.10",
     "@types/node": "^25.9.0",
     "@types/vscode": "^1.85.0",
     "@typescript-eslint/eslint-plugin": "^8.59.4",
     "@typescript-eslint/parser": "^8.59.4",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.9.1",
     "esbuild": "^0.28.0",
     "eslint": "^8.56.0",
+    "mocha": "^11.7.5",
     "ovsx": "^0.10.12",
     "typescript": "^6.0.3",
     "vitest": "^4.1.6"

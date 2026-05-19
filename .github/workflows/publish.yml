@@ -6,6 +6,13 @@ name: Publish
 # VS Code Marketplace and Open VSX, then attaches the .vsix to a
 # GitHub release.
 #
+# Tag-naming convention:
+#   - `v0.1.0` (stable)          → stable marketplace channel.
+#   - `v0.1.0-rc.1` (pre-release) → pre-release marketplace channel,
+#                                   GitHub release marked `prerelease`.
+# Detection is by the presence of a `-` after the semver core; see
+# the "Detect pre-release tag" step below.
+#
 # Required repo secrets:
 #   - VSCE_PAT  — Azure DevOps Personal Access Token, scope
 #                 `Marketplace > Acquire and Manage`. Bound to the
@@ -109,6 +116,26 @@ jobs:
       - name: Bundle smoke
         run: npm run smoke
 
+      - name: Detect pre-release tag
+        # A tag like `v0.2.0-rc.1` (anything with a `-` after the
+        # semver core) ships to the marketplace's pre-release channel
+        # and the GitHub release is marked prerelease. Stable tags
+        # (`v0.2.0`) ship to the stable channel. Detection is purely
+        # by the version string — keeps the convention discoverable
+        # via `git tag`.
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          if [[ "$version" == *-* ]]; then
+            echo "Pre-release tag detected: $version"
+            echo "PRERELEASE_FLAG=--pre-release" >> "$GITHUB_ENV"
+            echo "GH_PRERELEASE=--prerelease" >> "$GITHUB_ENV"
+          else
+            echo "Stable tag: $version"
+            echo "PRERELEASE_FLAG=" >> "$GITHUB_ENV"
+            echo "GH_PRERELEASE=" >> "$GITHUB_ENV"
+          fi
+
       - name: Package vsix
         # vsce and ovsx are pinned devDependencies in package.json, so
         # `npm ci` above installed the exact versions and Dependabot
@@ -116,7 +143,7 @@ jobs:
         # the local binary — no fresh fetch with PATs in env.
         run: |
           version=$(node -p "require('./package.json').version")
-          npx vsce package --out "pipeline-check-${version}.vsix"
+          npx vsce package $PRERELEASE_FLAG --out "pipeline-check-${version}.vsix"
           ls -lh "pipeline-check-${version}.vsix"
           echo "VSIX_PATH=pipeline-check-${version}.vsix" >> $GITHUB_ENV
 
@@ -124,7 +151,7 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
-          npx vsce publish \
+          npx vsce publish $PRERELEASE_FLAG \
             --packagePath "$VSIX_PATH" \
             --pat "$VSCE_PAT"
 
@@ -132,7 +159,10 @@ jobs:
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: |
-          npx ovsx publish "$VSIX_PATH" \
+          # Open VSX (ovsx >= 0.10) honours --pre-release the same
+          # way vsce does. Older versions ignore the flag silently,
+          # so this stays safe across minor bumps.
+          npx ovsx publish $PRERELEASE_FLAG "$VSIX_PATH" \
             --pat "$OVSX_PAT"
 
       - name: Create GitHub release
@@ -140,6 +170,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           version=$(node -p "require('./package.json').version")
-          gh release create "v${version}" "$VSIX_PATH" \
+          gh release create "v${version}" "$VSIX_PATH" $GH_PRERELEASE \
             --title "v${version}" \
             --notes-file <(awk '/^## \[/{n++} n==2{exit} n==1{print}' CHANGELOG.md)

@@ -6,10 +6,14 @@ test-fixtures/**
 scripts/**
 docs/**
 out/**
+out-test/**
 ROADMAP.md
 .gitignore
 .eslintrc.json
+.vscode-test.mjs
 tsconfig.json
+tsconfig.integration.json
+vitest.config.ts
 **/*.map
 **/*.ts
 **/tsconfig.json
