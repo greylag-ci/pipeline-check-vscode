@@ -8,7 +8,7 @@
 // position translation).
 //
 // The server itself lives upstream in `dmartinochoa/pipeline-check`
-// under `pipeline_check/lsp/`; install via `pip install
+// under `pipeline_check/lsp/`; install via `python -m pip install
 // "pipeline-check[lsp]"`.
 
 import * as vscode from "vscode";
