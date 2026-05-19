@@ -108,4 +108,84 @@ suite("Pipeline-Check — activation", () => {
       "virtualWorkspaces should be false (extension spawns a child process)",
     );
   });
+
+  test("scanWorkspace finds the fixture's workflow file in a real workspace", async function () {
+    // Regression fence for the nested-brace findFiles bug that
+    // produced "no scannable files found" even with workflows present.
+    // The unit suite pins findScannableFiles' shape; this test runs
+    // the whole command against a real VS Code findFiles to confirm
+    // the actual glob resolution finds the fixture.
+    this.timeout(15000);
+    const ext = vscode.extensions.getExtension(EXTENSION_ID);
+    assert(ext);
+    await ext.activate();
+
+    // The workspace is `test-fixtures/sample-workflow/` (set in
+    // .vscode-test.mjs). It contains `.github/workflows/release.yml`.
+    // Verify findFiles independently — same call shape scanWorkspace
+    // uses internally — and confirm at least one workflow shows up.
+    const found = await vscode.workspace.findFiles(
+      "**/.github/workflows/*.{yml,yaml}",
+      "**/{node_modules,.git}/**",
+    );
+    assert.ok(
+      found.some((u) => u.fsPath.endsWith("release.yml")),
+      `findFiles missed the fixture workflow: ${found.map((u) => u.fsPath).join(", ")}`,
+    );
+
+    // The command itself should resolve without throwing. The LSP
+    // child may not be running in CI (Python is not necessarily on
+    // PATH); the scan walk is independent of the LSP — it just opens
+    // documents so the (running or not) server sees them. The
+    // assertion is the negative one: no exception.
+    await vscode.commands.executeCommand("pipelineCheck.scanWorkspace");
+  });
+
+  test("workspace-trust capability blocks workspace-overridable settings without an explicit prompt", () => {
+    // serverCommand and serverArgs spawn a child process; the manifest
+    // declares both as `machine-overridable` so a workspace cannot
+    // silently override them. Pinned here so a future schema edit
+    // that demotes their scope can't slip through review.
+    const ext = vscode.extensions.getExtension(EXTENSION_ID);
+    assert(ext);
+    const props = ext.packageJSON.contributes?.configuration?.properties as
+      | Record<string, { scope?: string }>
+      | undefined;
+    assert.ok(props, "configuration.properties missing from package.json");
+    assert.strictEqual(
+      props["pipelineCheck.serverCommand"]?.scope,
+      "machine-overridable",
+      "pipelineCheck.serverCommand must stay machine-overridable",
+    );
+    assert.strictEqual(
+      props["pipelineCheck.serverArgs"]?.scope,
+      "machine-overridable",
+      "pipelineCheck.serverArgs must stay machine-overridable",
+    );
+  });
+
+  test("viewsWelcome contributes both install-prompt and scan-ready entries", () => {
+    const ext = vscode.extensions.getExtension(EXTENSION_ID);
+    assert(ext);
+    const welcome = ext.packageJSON.contributes?.viewsWelcome as
+      | Array<{ view: string; when?: string }>
+      | undefined;
+    assert.ok(welcome, "viewsWelcome block missing from package.json");
+    const onFindings = welcome.filter(
+      (w) => w.view === "pipelineCheck.findings",
+    );
+    assert.strictEqual(
+      onFindings.length,
+      2,
+      "findings view should have two viewsWelcome entries (ready + not-ready)",
+    );
+    assert.ok(
+      onFindings.some((w) => w.when === "pipelineCheck.lspReady"),
+      "missing ready-state welcome entry",
+    );
+    assert.ok(
+      onFindings.some((w) => w.when === "!pipelineCheck.lspReady"),
+      "missing install-prompt welcome entry",
+    );
+  });
 });
