@@ -6,6 +6,7 @@ vi.mock("vscode", async () => {
 });
 
 import { resetStubState } from "./__testStubs__/vscode";
+import { setLspReady } from "./lspState";
 import {
   findScannableFiles,
   formatSummary,
@@ -14,6 +15,11 @@ import {
 
 beforeEach(() => {
   resetStubState();
+  // The scan command bails when the LSP is not ready (otherwise it
+  // would openTextDocument every file with no didOpen recipient and
+  // mislead the user with a "scanned N files" toast). Default tests
+  // to the ready state; the not-ready behaviour gets its own block.
+  setLspReady(true);
 });
 
 // Small URI factory matching the shape findFiles returns and
@@ -260,5 +266,49 @@ describe("scanWorkspace — scanning path", () => {
     expect(result.scanned).toBe(0);
     // Cancelled runs route the summary to a warning.
     expect(globalThis.__stubCalls?.warningMessages ?? []).toHaveLength(1);
+  });
+});
+
+describe("scanWorkspace — LSP-not-ready gate", () => {
+  // Without a live LSP, opening every candidate document is wasted
+  // work (no didOpen recipient → no diagnostics → empty Findings) and
+  // the completion toast would actively mislead the user. The gate
+  // bails early and routes the user toward the install / restart
+  // flow instead.
+
+  beforeEach(() => {
+    globalThis.__stubWorkspaceFolders = [
+      { uri: { toString: () => "file:///r", fsPath: "/r" } },
+    ];
+    globalThis.__stubFindFiles = [
+      { toString: () => "file:///r/Dockerfile", fsPath: "/r/Dockerfile" },
+    ];
+    setLspReady(false);
+  });
+
+  it("returns zero counts without touching findFiles or openTextDocument", async () => {
+    const result = await scanWorkspace();
+    expect(result).toEqual({ scanned: 0, failed: 0, cancelled: false });
+    // The gate must short-circuit BEFORE the candidate enumeration —
+    // otherwise a 50k-file workspace pays the findFiles cost just to
+    // be told no.
+    expect(globalThis.__stubCalls?.findFiles ?? []).toEqual([]);
+  });
+
+  it("surfaces a warning toast with actionable buttons in noisy mode", async () => {
+    await scanWorkspace();
+    const warnings = globalThis.__stubCalls?.warningMessages ?? [];
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].toLowerCase()).toContain("language server");
+    expect(warnings[0].toLowerCase()).toContain("not running");
+  });
+
+  it("suppresses the toast in quiet mode", async () => {
+    // scan-on-save uses quiet mode; a toast on every save would be
+    // unbearable when the LSP is intermittently down.
+    const result = await scanWorkspace({ quiet: true });
+    expect(result).toEqual({ scanned: 0, failed: 0, cancelled: false });
+    expect(globalThis.__stubCalls?.warningMessages ?? []).toEqual([]);
+    expect(globalThis.__stubCalls?.infoMessages ?? []).toEqual([]);
   });
 });

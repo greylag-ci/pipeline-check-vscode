@@ -16,6 +16,7 @@ import {
   LanguageClient,
   LanguageClientOptions,
   ServerOptions,
+  State,
   TransportKind,
 } from "vscode-languageclient/node";
 import { FindingsCodeLensProvider } from "./codeLens";
@@ -109,6 +110,22 @@ type LeafLike = {
 };
 
 let client: LanguageClient | undefined;
+// Disposable for the onDidChangeState listener registered against the
+// current `client`. We hang on to it so `stopClient` can dispose it
+// before the next `startClient` builds a fresh listener — otherwise a
+// crash on the previous client would still fire into our handler and
+// flip `lspReady` against the live client.
+let clientStateChangeDisposable: vscode.Disposable | undefined;
+// Hard ceiling on how long `client.start()` is allowed to run before
+// we treat the LSP as broken. Without this, a `serverArgs: []`
+// (configured Python interpreter drops into the REPL waiting on
+// stdin), or any Python interpreter that hangs during module import,
+// leaves `activate()` pending forever — the install-prompt welcome
+// panel stays up and the user has no way to know the difference
+// between "LSP is slow" and "LSP will never come up". 30 s is well
+// above the cold-start budget on Windows (where pyc compilation can
+// add several seconds the first time pipeline_check.lsp imports).
+const START_TIMEOUT_MS = 30_000;
 
 function buildClient(): LanguageClient {
   const config = vscode.workspace.getConfiguration("pipelineCheck");
@@ -193,9 +210,25 @@ async function startClient(): Promise<void> {
   clientLog.setLogChannel(outputChannel);
   try {
     clientLog.info("language server: starting");
-    await client.start();
+    await startWithTimeout(client, START_TIMEOUT_MS);
     clientLog.info("language server: started");
     setLspReady(true);
+    // Watch the post-start lifecycle so a mid-session crash (server
+    // process exits, LanguageClient's auto-restart exhausts) flips the
+    // welcome panel back to the install-prompt state. Without this,
+    // `lspReady` only ever transitions back to false on an explicit
+    // stop/restart — a crashed server would leave the panel saying
+    // "Scan workspace" even though clicking it produces no findings.
+    // The listener lives in module scope so stopClient can tear it
+    // down before a restart builds a new one against the new client.
+    clientStateChangeDisposable = client.onDidChangeState((event) => {
+      if (event.newState === State.Stopped) {
+        clientLog.warn("language server: state transitioned to stopped");
+        setLspReady(false);
+      } else if (event.newState === State.Running) {
+        setLspReady(true);
+      }
+    });
   } catch (err) {
     // The most common cause is `python -m pipeline_check.lsp` failing:
     // either Python is not on PATH or the [lsp] extra is not installed.
@@ -245,6 +278,14 @@ async function stopClient(): Promise<void> {
   const local = client;
   client = undefined;
   setLspReady(false);
+  // Drop the state-change listener BEFORE awaiting stop(). Otherwise
+  // the Stopped transition that stop() triggers re-fires our handler
+  // against the now-detached client and calls setLspReady(false) a
+  // second time. Cheap, but the second flip is misleading in the log.
+  if (clientStateChangeDisposable) {
+    clientStateChangeDisposable.dispose();
+    clientStateChangeDisposable = undefined;
+  }
   let timer: NodeJS.Timeout | undefined;
   try {
     await Promise.race([
@@ -260,6 +301,41 @@ async function stopClient(): Promise<void> {
     // If stop() didn't win the race the client is stranded; dispose
     // explicitly so its subscriptions don't outlive us.
     local.dispose?.();
+  }
+}
+
+/**
+ * Race the LSP startup handshake against a hard ceiling. On timeout
+ * we call `client.stop()` to kill the stranded subprocess (best
+ * effort — the server may already be hung past saving) and throw a
+ * recognisable error the caller's catch surfaces in the failure
+ * toast.
+ */
+async function startWithTimeout(
+  c: LanguageClient,
+  timeoutMs: number,
+): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      // Fire-and-forget the cleanup stop(); we don't await it because
+      // a hung interpreter probably won't respond, and the timeout
+      // toast wants to be on screen now, not in 30 seconds when stop
+      // gives up.
+      void c.stop().catch(() => undefined);
+      reject(
+        new Error(
+          `Language server did not finish startup within ${Math.round(timeoutMs / 1000)}s. Check the server log; common causes are an empty pipelineCheck.serverArgs, an interpreter that drops into the REPL, or a corrupted pipeline_check install.`,
+        ),
+      );
+    }, timeoutMs);
+  });
+  try {
+    await Promise.race([c.start(), timeout]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
   }
 }
 

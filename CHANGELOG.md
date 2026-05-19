@@ -13,6 +13,35 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Welcome panel stops lying after an LSP crash.** Subscribe to
+  `client.onDidChangeState` so a mid-session server crash (or the
+  LanguageClient's auto-restart exhausting) flips `pipelineCheck.lspReady`
+  back to `false`. Previously the panel kept showing "Scan workspace"
+  after the LSP died — the button still worked, it just opened files
+  against a dead server.
+- **`disabledProviders` now silences lowercase `dockerfile` /
+  `jenkinsfile`.** The internal glob matcher in `providerForPath` was
+  case-sensitive against `**/Dockerfile`, so files written in lowercase
+  (common on Windows case-preserving filesystems) classified as
+  `undefined` and slipped past the user's disable filter.
+- **Activation no longer hangs on a misconfigured `serverArgs`.**
+  `client.start()` is now raced against a 30-second timeout. An empty
+  `pipelineCheck.serverArgs` used to drop the Python child into the
+  REPL where it waited on stdin forever; activation would stay
+  half-pending and the welcome panel would never leave the install
+  prompt. On timeout we kill the stranded subprocess and surface the
+  same "Install in terminal / Open server log" toast the LSP-failure
+  path uses.
+- **`Scan workspace` no longer claims success against a dead LSP.**
+  The scan command now gates on `isLspReady()` and surfaces a warning
+  toast with **Install in terminal / Restart language server / Open
+  server log** when the LSP is down. Quiet mode (scan-on-save) stays
+  silent. Previously the scan would `openTextDocument` every candidate
+  file, publish no diagnostics, and finish with a "scanned N files"
+  toast even though no LSP was alive to produce findings.
+
 ## [1.0.0] — 2026-05-19
 
 First stable release. Closes the v0.x line: the Findings tree has its

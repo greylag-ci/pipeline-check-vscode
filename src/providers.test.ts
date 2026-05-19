@@ -113,4 +113,28 @@ describe("providerForPath", () => {
     expect(providerForPath("/repo/mkdocs.yml")).toBeUndefined();
     expect(providerForPath("/repo/values.yaml")).toBeUndefined();
   });
+
+  it("matches Dockerfile and Jenkinsfile case-insensitively", () => {
+    // Windows file systems are case-insensitive but preserve the
+    // on-disk case in `fsPath`. A user with `dockerfile` (lowercase)
+    // or `DOCKERFILE` on disk would otherwise slip through
+    // providerForPath as `undefined`, and the disabledProviders
+    // middleware filter could not silence them. Same risk on
+    // case-insensitive macOS APFS volumes and for users who simply
+    // happen to lowercase build files. The match has to follow.
+    expect(providerForPath("/repo/dockerfile")).toBe("dockerfile");
+    expect(providerForPath("/repo/DOCKERFILE")).toBe("dockerfile");
+    expect(providerForPath("/repo/Dockerfile")).toBe("dockerfile");
+    expect(providerForPath("/repo/jenkinsfile")).toBe("jenkins");
+    expect(providerForPath("/repo/JENKINSFILE")).toBe("jenkins");
+    expect(providerForPath("/repo/containerfile")).toBe("dockerfile");
+    expect(providerForPath("/repo/CONTAINERFILE")).toBe("dockerfile");
+  });
+
+  it("matches workflow / config filenames regardless of case", () => {
+    expect(providerForPath("/repo/.gitlab-ci.YML")).toBe("gitlab");
+    expect(providerForPath("/repo/.GITHUB/workflows/ci.YAML")).toBe(
+      "github-actions",
+    );
+  });
 });

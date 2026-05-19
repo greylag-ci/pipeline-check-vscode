@@ -6,7 +6,7 @@ vi.mock("vscode", async () => {
 });
 
 import { resetStubState } from "./__testStubs__/vscode";
-import { LSP_READY_CONTEXT_KEY, setLspReady } from "./lspState";
+import { LSP_READY_CONTEXT_KEY, isLspReady, setLspReady } from "./lspState";
 
 beforeEach(() => {
   resetStubState();
@@ -65,5 +65,26 @@ describe("setLspReady", () => {
     for (const c of calls) {
       expect(c.command).toBe("setContext");
     }
+  });
+});
+
+describe("isLspReady", () => {
+  // Synchronous mirror of what setLspReady last pushed. The
+  // scan-workspace gate reads through this rather than through a
+  // setContext readback (VS Code has no synchronous getter) — if the
+  // two ever drift, the welcome panel and the scan gate disagree.
+
+  it("reports the value of the last setLspReady call", () => {
+    setLspReady(true);
+    expect(isLspReady()).toBe(true);
+    setLspReady(false);
+    expect(isLspReady()).toBe(false);
+  });
+
+  it("returns true while ready even if other commands have fired", () => {
+    setLspReady(true);
+    // A future caller might call executeCommand on other surfaces in
+    // between; the readback must stay tied to setLspReady alone.
+    expect(isLspReady()).toBe(true);
   });
 });

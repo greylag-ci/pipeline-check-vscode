@@ -84,9 +84,13 @@ export const TRIGGER_DOCUMENT_SELECTOR: readonly TriggerSelector[] =
  * diagnostics for files whose provider has been disabled in settings.
  *
  * Matching is the same minimatch dialect VS Code's `findFiles` and
- * `documentSelector` use. Implemented locally with a small glob
- * matcher so the function works in both the editor and the unit
- * test environment.
+ * `documentSelector` use, but case-insensitive: Windows file systems
+ * happily report `dockerfile` or `JENKINSFILE` even though our globs
+ * spell them `Dockerfile` / `Jenkinsfile`. A case-sensitive match
+ * would silently drop the provider classification, and the
+ * `disabledProviders` middleware filter would then fail to silence
+ * those files. Linux users naming a file `dockerfile` would hit the
+ * same bug. Globs themselves are still POSIX-shaped (slashes only).
  */
 export function providerForPath(path: string): ProviderId | undefined {
   // Normalise Windows backslashes — globs are POSIX-shaped.
@@ -106,6 +110,8 @@ export function providerForPath(path: string): ProviderId | undefined {
  * `**` (any number of path segments), `*` (anything but `/`), and
  * brace alternatives `{a,b}`. Sufficient for `**\/.github/workflows/*.{yml,yaml}`
  * and similar; not a general-purpose minimatch replacement.
+ *
+ * Matching is case-insensitive — see providerForPath for the why.
  */
 function globMatch(pattern: string, path: string): boolean {
   // Expand brace alternatives into a list of plain globs.
@@ -128,7 +134,9 @@ function expandBraces(pattern: string): string[] {
 function toRegex(pattern: string): RegExp {
   // Walk the pattern char by char to translate `**`, `*`, and
   // everything else (escaped). `**` matches zero-or-more path
-  // segments; `*` matches anything but `/`.
+  // segments; `*` matches anything but `/`. The `i` flag carries
+  // case-insensitive matching so `Dockerfile` and `dockerfile` map
+  // to the same provider.
   let re = "";
   for (let i = 0; i < pattern.length; i++) {
     if (pattern[i] === "*" && pattern[i + 1] === "*") {
@@ -144,5 +152,5 @@ function toRegex(pattern: string): RegExp {
       re += pattern[i];
     }
   }
-  return new RegExp(`^${re}$`);
+  return new RegExp(`^${re}$`, "i");
 }
