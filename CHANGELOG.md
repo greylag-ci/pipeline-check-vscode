@@ -11,7 +11,40 @@ versions follow [SemVer](https://semver.org/).
 > section **above** Unreleased, or remove the Unreleased block for the
 > release commit. Otherwise the GitHub release ships boilerplate.
 
-## [Unreleased]
+## [1.0.1] — 2026-05-19
+
+Stability batch on top of v1.0.0 — three rounds of edge-case
+hardening covered by 57 new tests (194 → 251), plus supply-chain
+hardening on the publish pipeline (CycloneDX SBOM + signed SLSA
+provenance attached to each release). No new features; no behavior
+change for users on the golden path. Highlights: the LSP install
+command now uses the universal `python -m pip` form so the official
+Windows Python installer + corporate ExecutionPolicy combo stops
+blocking first-run install; the welcome panel and status bar no
+longer go stale after an LSP crash or workspace-folder removal;
+`Scan workspace` against a dead LSP surfaces a real error instead of
+a false-success toast; the rc → ga "What's new" toast actually fires
+this time.
+
+### Security
+
+- **CycloneDX SBOM attached to each GitHub release.** The publish
+  workflow now scans `package-lock.json` via `anchore/sbom-action`
+  and uploads `pipeline-check-<version>-sbom.cdx.json` alongside the
+  `.vsix`. Downstream consumers can ingest it into their existing
+  vuln-management tooling without re-deriving the dep set from the
+  bundle.
+- **Signed SLSA build provenance for each `.vsix`.** Emitted by
+  `actions/attest-build-provenance` using GitHub's OIDC token and
+  Sigstore's keyless flow. Consumers verify with
+  `gh attestation verify pipeline-check-<version>.vsix --owner greylag-ci`.
+  Covers signing (no separate cosign step) and provenance in one
+  attestation.
+- **`npm audit --omit=dev --audit-level=high` gate on the publish
+  workflow.** CI already runs this on every push; the publish-side
+  gate catches advisories that land between the merge to `main` and
+  the tag push, preventing a known-vulnerable build from shipping
+  during the window between merge and release.
 
 ### Changed
 
