@@ -149,3 +149,4 @@ out/
 
 # VS Code dev sandbox
 .vscode-test/
+.claude/
