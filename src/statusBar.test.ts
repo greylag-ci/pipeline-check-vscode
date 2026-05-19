@@ -2,13 +2,21 @@ import { describe, it, expect, vi } from "vitest";
 
 // statusBar.ts imports `vscode` for the runtime wiring; the pure
 // helpers (formatStatusBarText, formatStatusBarTooltip,
-// countDiagnostics) don't touch it but the module-level import has to
-// resolve. Tiny stub covers it.
-vi.mock("vscode", () => ({
-  StatusBarAlignment: { Left: 1, Right: 2 },
-  window: {},
-  languages: {},
-}));
+// countDiagnostics, pickBackgroundColor) don't touch it but the
+// module-level import has to resolve. Tiny stub covers it; ThemeColor
+// is a class so `new vscode.ThemeColor(id)` works and tests can read
+// `.id` off the result.
+vi.mock("vscode", () => {
+  class ThemeColor {
+    constructor(public readonly id: string) {}
+  }
+  return {
+    ThemeColor,
+    StatusBarAlignment: { Left: 1, Right: 2 },
+    window: {},
+    languages: {},
+  };
+});
 
 import {
   countDiagnostics,
@@ -216,5 +224,79 @@ describe("formatStatusBarTooltip", () => {
       INFO: 0,
     });
     expect(tip).not.toContain("Alt+F8");
+  });
+});
+
+describe("pickBackgroundColor", () => {
+  // The stub vscode module returns `{ id }` as the ThemeColor — the
+  // tests check the colour by id rather than relying on identity.
+  // We need ThemeColor to be available in the stub for this test;
+  // statusBar.test.ts's existing minimal stub doesn't include it.
+  // Below we re-import the function through the same minimal stub
+  // (vi.mock at the top of this file maps `vscode` to the inline
+  // object), so we read .id off whatever shape it returns.
+
+  // Pull the function lazily so the vi.mock at the top is already in
+  // place when it resolves.
+  async function pick(c: import("./statusBar").SeverityCounts) {
+    const mod = await import("./statusBar");
+    return mod.pickBackgroundColor(c);
+  }
+
+  it("returns the error-background token when CRITICAL is present", async () => {
+    const bg = (await pick({
+      CRITICAL: 1,
+      HIGH: 0,
+      MEDIUM: 0,
+      LOW: 0,
+      INFO: 0,
+    })) as { id: string } | undefined;
+    expect(bg?.id).toBe("statusBarItem.errorBackground");
+  });
+
+  it("CRITICAL outranks HIGH for the colour choice", async () => {
+    const bg = (await pick({
+      CRITICAL: 1,
+      HIGH: 5,
+      MEDIUM: 0,
+      LOW: 0,
+      INFO: 0,
+    })) as { id: string } | undefined;
+    expect(bg?.id).toBe("statusBarItem.errorBackground");
+  });
+
+  it("returns the warning-background token when HIGH (but no CRITICAL) is present", async () => {
+    const bg = (await pick({
+      CRITICAL: 0,
+      HIGH: 3,
+      MEDIUM: 0,
+      LOW: 0,
+      INFO: 0,
+    })) as { id: string } | undefined;
+    expect(bg?.id).toBe("statusBarItem.warningBackground");
+  });
+
+  it("returns undefined when only MEDIUM / LOW / INFO are present", async () => {
+    expect(
+      await pick({
+        CRITICAL: 0,
+        HIGH: 0,
+        MEDIUM: 4,
+        LOW: 9,
+        INFO: 2,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined on a clean workspace", async () => {
+    expect(
+      await pick({
+        CRITICAL: 0,
+        HIGH: 0,
+        MEDIUM: 0,
+        LOW: 0,
+        INFO: 0,
+      }),
+    ).toBeUndefined();
   });
 });

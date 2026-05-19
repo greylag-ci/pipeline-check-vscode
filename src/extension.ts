@@ -30,6 +30,7 @@ import {
 import { filterByThreshold } from "./severityFilter";
 import { registerStatusBar } from "./statusBar";
 import { scanWorkspace } from "./workspaceScan";
+import { showWhatsNewIfUpgraded } from "./whatsNew";
 
 // Group-mode options offered by the Findings panel's "Change
 // Grouping" button. Labels are user-facing; descriptions are the
@@ -376,6 +377,13 @@ export async function activate(
   );
 
   await startClient();
+
+  // Fire-and-forget the one-time "what's new" toast for users who
+  // just upgraded. Detached so a not-yet-dismissed notification never
+  // blocks activation (same lesson as the LSP-failure toast). The
+  // function persists the seen-version before showing, so a missed
+  // notification doesn't repeat next launch.
+  void showWhatsNewIfUpgraded(context, context.extension.packageJSON.version);
 }
 
 export async function deactivate(): Promise<void> {

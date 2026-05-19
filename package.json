@@ -41,7 +41,6 @@
   "homepage": "https://github.com/greylag-ci/pipeline-check-vscode#readme",
   "main": "./dist/extension.js",
   "activationEvents": [
-    "onStartupFinished",
     "workspaceContains:**/.github/workflows/*.yml",
     "workspaceContains:**/.github/workflows/*.yaml",
     "workspaceContains:**/.gitlab-ci.yml",
@@ -59,7 +58,7 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "Pipeline-Check spawns the configured Python interpreter to analyze workflow files. In untrusted workspaces the extension stays inactive until the workspace is trusted."
+      "description": "Pipeline-Check spawns the configured Python interpreter (defaults to `python -m pipeline_check.lsp`) to analyze workflow files. The `serverCommand` and `serverArgs` settings — the only inputs that influence what gets executed — are scoped `machine-overridable`, so a workspace cannot silently override them; VS Code surfaces an explicit prompt before any workspace-level value is applied. No other workspace-controlled input reaches a process-spawning code path."
     },
     "virtualWorkspaces": false
   },
