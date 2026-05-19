@@ -18,7 +18,11 @@ export default defineConfig({
   // they run; without a sane timeout, mocha may fail before the
   // extension finishes activating in slow CI environments.
   mocha: {
-    ui: "bdd",
+    // TDD ui exports `suite` / `test` (matching what every official
+    // VS Code extension uses). BDD's `describe` / `it` would need a
+    // re-write of the test files; staying with TDD keeps the
+    // convention familiar.
+    ui: "tdd",
     timeout: 20000,
     color: true,
   },
