@@ -14,6 +14,11 @@ on:
 
 permissions:
   contents: read
+  # The dogfood step's SARIF upload (github/codeql-action/upload-sarif)
+  # writes findings to the repo's Security tab. PR triggers degrade
+  # gracefully without this (GitHub strips write tokens for forks), so
+  # the gap only surfaced on the first push: main run.
+  security-events: write
 
 jobs:
   check:
