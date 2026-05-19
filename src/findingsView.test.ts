@@ -235,6 +235,21 @@ describe("FindingsTreeProvider — group by file", () => {
     expect(roots[0].kind === "group" && roots[0].description).toBe("2");
     expect(roots[1].kind === "group" && roots[1].description).toBe("1");
   });
+
+  it("carries the workspace-relative path on the group tooltip", () => {
+    // U11: description is count-only so the right edge of the tree
+    // scans uniformly. The disambiguator for same-basename files in
+    // different directories (workflows/release.yml vs
+    // pipelines/release.yml) moves to the tooltip.
+    setStubDiagnostics([
+      { file: "workflows/release.yml", rule: "GHA-001", severity: "HIGH" },
+    ]);
+    const p = new FindingsTreeProvider(ctx);
+    p.setGroupMode("file");
+    const roots = p.getChildren();
+    const item = p.getTreeItem(roots[0]);
+    expect(item.tooltip).toBe("/workflows/release.yml");
+  });
 });
 
 describe("FindingsTreeProvider — group by rule", () => {
@@ -261,6 +276,25 @@ describe("FindingsTreeProvider — group by rule", () => {
     expect(roots.map((n) => (n.kind === "group" ? n.label : ""))).toEqual([
       "(unknown rule)",
     ]);
+  });
+
+  it("picks the icon from the maximum severity in the bucket", () => {
+    // U6: rule groups previously took items[0].severity after a sort
+    // that ordered by file path + line — totally unrelated to
+    // severity. A rule with one CRITICAL and four LOW findings could
+    // render as the LOW icon if the CRITICAL was on the lexicographically-
+    // last file. maxSeverity aggregation pins the icon to the worst case
+    // so the tree's at-every-depth severity signal stays honest.
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "LOW" },
+      { file: "z.yml", rule: "GHA-001", severity: "CRITICAL" },
+      { file: "a.yml", rule: "GHA-001", severity: "LOW" },
+    ]);
+    const p = new FindingsTreeProvider(ctx);
+    p.setGroupMode("rule");
+    const roots = p.getChildren();
+    const icon = roots[0].kind === "group" ? roots[0].icon : undefined;
+    expect((icon as { id: string }).id).toBe("flame");
   });
 });
 
@@ -433,5 +467,17 @@ describe("FindingsTreeProvider — group mode behaviour", () => {
     expect(fires).toBe(0);
     p.setGroupMode("file");
     expect(fires).toBe(1);
+  });
+
+  it("getGroupMode reflects the most recent setGroupMode call", () => {
+    // The Quick Pick prompt in extension.ts reads getGroupMode() to
+    // mark the active row with $(check). If the getter ever drifted
+    // from the field, the Quick Pick would lie. Pinned here.
+    const p = new FindingsTreeProvider(ctx);
+    expect(p.getGroupMode()).toBe("severity"); // default
+    p.setGroupMode("rule");
+    expect(p.getGroupMode()).toBe("rule");
+    p.setGroupMode("file");
+    expect(p.getGroupMode()).toBe("file");
   });
 });

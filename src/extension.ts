@@ -19,6 +19,56 @@ import {
   TransportKind,
 } from "vscode-languageclient/node";
 import { FindingsTreeProvider, GroupMode } from "./findingsView";
+
+// Group-mode options offered by the Findings panel's "Change
+// Grouping" button. Labels are user-facing; descriptions are the
+// muted secondary text in the Quick Pick row. The order matches the
+// title-bar history of the radio buttons that this Quick Pick
+// replaces, so muscle memory carries over.
+const GROUPING_PICKS: readonly {
+  readonly mode: GroupMode;
+  readonly label: string;
+  readonly description: string;
+}[] = [
+  {
+    mode: "severity",
+    label: "Severity",
+    description: "Critical, High, Medium, Low, Info",
+  },
+  {
+    mode: "file",
+    label: "File",
+    description: "One bucket per file, ordered by path",
+  },
+  {
+    mode: "rule",
+    label: "Rule",
+    description: "One bucket per check ID (GHA-001, etc.)",
+  },
+];
+
+async function changeGrouping(
+  provider: FindingsTreeProvider,
+): Promise<void> {
+  const current = provider.getGroupMode();
+  type Pick = vscode.QuickPickItem & { mode: GroupMode };
+  const items: Pick[] = GROUPING_PICKS.map((p) => ({
+    // ``$(check)`` prefix marks the active mode. The Quick Pick has
+    // no native "selected option" affordance for show-only-callback
+    // pickers, so we draw the check ourselves — same pattern VS Code
+    // uses for its "Change Language Mode" picker.
+    label: p.mode === current ? `$(check) ${p.label}` : `    ${p.label}`,
+    description: p.description,
+    mode: p.mode,
+  }));
+  const choice = await vscode.window.showQuickPick(items, {
+    title: "Group findings by",
+    placeHolder: "Choose how the panel should bucket findings",
+  });
+  if (choice) {
+    provider.setGroupMode(choice.mode);
+  }
+}
 import { filterByThreshold } from "./severityFilter";
 
 const LANGUAGE_ID = "pipelineCheck";
@@ -149,20 +199,23 @@ export async function activate(
   // takes a moment to come up (or fails outright), the panel is still
   // visible and surfaces findings the moment the first publish lands.
   const findingsProvider = new FindingsTreeProvider(context);
-  const groupModes: readonly GroupMode[] = ["severity", "file", "rule"];
+  const findingsView = vscode.window.createTreeView("pipelineCheck.findings", {
+    treeDataProvider: findingsProvider,
+    showCollapseAll: true,
+  });
+  // Two-phase wiring: the view needs the provider at construction
+  // time, but the provider needs the view to drive its activity-bar
+  // badge. Handing the view back closes the loop and triggers an
+  // initial badge update.
+  findingsProvider.setTreeView(findingsView);
   context.subscriptions.push(
-    vscode.window.createTreeView("pipelineCheck.findings", {
-      treeDataProvider: findingsProvider,
-      showCollapseAll: true,
-    }),
+    findingsView,
     vscode.commands.registerCommand("pipelineCheck.findings.refresh", () =>
       findingsProvider.refresh(),
     ),
-    ...groupModes.map((mode) =>
-      vscode.commands.registerCommand(
-        `pipelineCheck.findings.groupBy.${mode}`,
-        () => findingsProvider.setGroupMode(mode),
-      ),
+    vscode.commands.registerCommand(
+      "pipelineCheck.findings.changeGrouping",
+      () => changeGrouping(findingsProvider),
     ),
     vscode.commands.registerCommand("pipelineCheck.restart", async () => {
       await stopClient();

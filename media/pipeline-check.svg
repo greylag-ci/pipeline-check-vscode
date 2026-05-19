@@ -1,4 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M12 2.5 L20.5 5.5 V12 C20.5 16.75 16.75 20.5 12 22 C7.25 20.5 3.5 16.75 3.5 12 V5.5 Z"/>
-  <path d="M8 12.25 L11 15.25 L16 9.5"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+     fill="none" stroke="currentColor" stroke-width="1.5"
+     stroke-linecap="round" stroke-linejoin="round">
+  <!-- Inverted-Y pipeline glyph. Top node and bottom-right node are
+       filled (active / problem); bottom-left is hollow (clean). The
+       asymmetric fill carries the brand idea: pipelines whose
+       posture is not uniform. Three nodes also map to the three
+       group-by modes (severity, file, rule). currentColor + no
+       fill on the outline lets VS Code tint the icon for active /
+       inactive / hover states in the activity bar. -->
+  <circle cx="12" cy="4.25" r="1.9" fill="currentColor" stroke="none"/>
+  <path d="M12 6.5 V11.25"/>
+  <path d="M12 11.25 L7 16.5"/>
+  <path d="M12 11.25 L17 16.5"/>
+  <circle cx="7" cy="18.25" r="1.9"/>
+  <circle cx="17" cy="18.25" r="1.9" fill="currentColor" stroke="none"/>
 </svg>

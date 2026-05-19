@@ -84,7 +84,7 @@
     "viewsWelcome": [
       {
         "view": "pipelineCheck.findings",
-        "contents": "No Pipeline-Check findings in open files.\n\nOpen a CI/CD configuration (for example a workflow under `.github/workflows/`) and findings will appear here as the server scans.\n\n[Restart language server](command:pipelineCheck.restart)\n[Show server log](command:pipelineCheck.showLog)"
+        "contents": "Pipeline-Check scans CI/CD configurations for OWASP Top 10 CI/CD risks and 14 other compliance frameworks.\n\nOpen a workflow, Dockerfile, or other supported config and findings will appear here.\n\nNot seeing findings on a file you expect to be scanned? [Restart the language server](command:pipelineCheck.restart) or [view the log](command:pipelineCheck.showLog)."
       }
     ],
     "commands": [
@@ -100,45 +100,23 @@
       },
       {
         "command": "pipelineCheck.findings.refresh",
-        "title": "Refresh findings",
+        "title": "Refresh",
         "category": "Pipeline-Check",
         "icon": "$(refresh)"
       },
       {
-        "command": "pipelineCheck.findings.groupBy.severity",
-        "title": "Group findings by severity",
+        "command": "pipelineCheck.findings.changeGrouping",
+        "title": "Change Grouping",
         "category": "Pipeline-Check",
-        "icon": "$(symbol-event)"
-      },
-      {
-        "command": "pipelineCheck.findings.groupBy.file",
-        "title": "Group findings by file",
-        "category": "Pipeline-Check",
-        "icon": "$(file)"
-      },
-      {
-        "command": "pipelineCheck.findings.groupBy.rule",
-        "title": "Group findings by rule",
-        "category": "Pipeline-Check",
-        "icon": "$(symbol-key)"
+        "icon": "$(list-tree)"
       }
     ],
     "menus": {
       "view/title": [
         {
-          "command": "pipelineCheck.findings.groupBy.severity",
-          "when": "view == pipelineCheck.findings && pipelineCheck.groupMode != severity",
+          "command": "pipelineCheck.findings.changeGrouping",
+          "when": "view == pipelineCheck.findings",
           "group": "navigation@1"
-        },
-        {
-          "command": "pipelineCheck.findings.groupBy.file",
-          "when": "view == pipelineCheck.findings && pipelineCheck.groupMode != file",
-          "group": "navigation@2"
-        },
-        {
-          "command": "pipelineCheck.findings.groupBy.rule",
-          "when": "view == pipelineCheck.findings && pipelineCheck.groupMode != rule",
-          "group": "navigation@3"
         },
         {
           "command": "pipelineCheck.findings.refresh",
@@ -149,6 +127,10 @@
       "commandPalette": [
         {
           "command": "pipelineCheck.findings.refresh",
+          "when": "view == pipelineCheck.findings"
+        },
+        {
+          "command": "pipelineCheck.findings.changeGrouping",
           "when": "view == pipelineCheck.findings"
         }
       ]

@@ -11,6 +11,29 @@ commit collapses this section into `## [X.Y.Z] — <date>`.
 
 ### Added
 
+- **Findings panel.** A dedicated activity-bar slot
+  ("Pipeline-Check" — custom inverted-Y pipeline glyph at
+  `media/pipeline-check.svg`) carries a `Findings` tree that
+  re-groups the diagnostics the LSP server has already published.
+  Strictly a re-presentation: never triggers its own scan, so the
+  thin-transport-adapter promise in `extension.ts` stays intact.
+  The activity-bar icon carries a live count badge so "how many
+  findings does this workspace have right now?" is answerable
+  without expanding the panel. Three group modes — severity
+  (default), file, rule — are switched via a `Change Grouping`
+  Quick Pick that marks the active mode with `$(check)`. Each leaf
+  renders as the rule title plus a `RULE · file:LINE` description
+  that drops whichever component is already implied by the parent
+  group; clicking opens the file at the diagnostic range.
+  CRITICAL is rendered as `flame` and HIGH as `error` so the two
+  distinguish in the severity-grouped tree without breaking parity
+  with the editor gutter (which has no "more red than red" state);
+  INFO uses `circle-outline` themed to `descriptionForeground` so
+  it is visibly the quietest row instead of inheriting the default
+  foreground. The welcome state leads with what the extension does
+  rather than what is missing; the diagnostic recovery links sit
+  on a secondary "Not seeing findings?" line.
+
 - **`pipelineCheck.severityThreshold` setting.** A new enum knob
   (`low` / `medium` / `high` / `critical`, default `low`) that mirrors
   the CLI's `--severity-threshold`. Drives a client-side
@@ -85,8 +108,6 @@ commit collapses this section into `## [X.Y.Z] — <date>`.
   and Dependabot's existing npm config keeps them current.
 - **Marketplace metadata polish.** Added `Other` to `categories`,
   pointed `qna` at the repo Discussions page.
-
-### Changed
 
 - **Marketplace polish pass.** The `package.json` `description` is
   rewritten so the numbers that differentiate this extension (22

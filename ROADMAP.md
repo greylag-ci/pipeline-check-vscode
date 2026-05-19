@@ -350,34 +350,41 @@ on their own.
       palette, so the shorter form remains unambiguous globally
       and fits the title-bar tooltip without truncation.
 
-### Follow-ups (not in this branch)
+### Also shipping with this branch
 
-- [ ] **U9** Replace the three group-mode title-bar buttons with
-      a single button that opens a Quick Pick. The current
-      "hide the active mode" radio pattern uses elimination as a
-      state indicator — a first-time user sees two of three modes
-      and can't tell which is active or that there's a third. No
-      other VS Code extension uses this pattern; Problems panel
-      uses a filter popup, GitLens uses a Quick Pick. Patch
-      changes the command surface ( drops three groupBy commands,
-      adds one `findings.changeGrouping` command and a private
-      Quick Pick prompt), so it lands separately for a cleaner
-      diff.
-- [ ] **U10** Collapse the inner sub-view header band. The
-      activity-bar slot says "PIPELINE-CHECK" and the only sub-view
-      inside says "FINDINGS" — two header bars eating ~50px before
-      the first row. If the slot only ever holds this one tree,
-      VS Code lets us elide the inner header by leaving
-      `views[].name` empty (Source Control does this). Trial in a
-      follow-up because empty `name` triggers some title-fallback
-      surprises in older VS Code engines.
-- [ ] **U11** Standardise group node descriptions to count-only.
-      Severity groups show `"5"`, file groups show `"5 · workflows"`,
-      rule groups show `"5"`. Move parent-dir into the tooltip and
-      land on `"5"` everywhere — a column of identical-shape
-      descriptions scans faster than mixed shapes. Held because
-      the file-grouping description is the only signal that
-      currently distinguishes two same-named files in different
-      directories (`workflows/release.yml` vs
-      `pipelines/release.yml`) and we'd need to add a tooltip
-      before we can drop the inline parent-dir hint.
+- [x] **U9** Replaced the three group-mode title-bar buttons with
+      a single "Change Grouping" button that opens a Quick Pick.
+      The old "hide the active mode" radio pattern used elimination
+      as a state indicator — a first-time user saw two of three
+      modes and could not tell which was active or that there was
+      a third. The Quick Pick mirrors VS Code's own "Change
+      Language Mode" picker: each row carries the option name plus
+      a one-line description; the active mode is prefixed with
+      `$(check)`. Dropped the three `pipelineCheck.findings.groupBy.*`
+      commands in favour of one `pipelineCheck.findings.changeGrouping`
+      command; menu `when` clauses that read `pipelineCheck.groupMode`
+      are no longer required (the context key is still set so
+      external keybindings / automation can query the current mode).
+- [x] **U11** Standardised group descriptions to count-only.
+      Severity, file, and rule groups all now show `"5"` in the
+      description column — a uniform right edge scans faster than
+      the mixed `"5"` / `"5 · workflows"` / `"5"` shapes we had.
+      The parent-dir disambiguator that used to live in the
+      file-group description moved to the group's tooltip, so
+      `workflows/release.yml` vs `pipelines/release.yml`
+      collisions are still distinguishable on hover.
+
+### Decided against
+
+- **U10** Collapse the inner sub-view header band. Considered
+      eliding the `FINDINGS` sub-header by leaving `views[].name`
+      empty, so the activity-bar slot's `PIPELINE-CHECK` title
+      would serve as the only header. On second look this is the
+      wrong call: every major single-purpose extension (GitLens,
+      Test Explorer, Docker, Run and Debug, Live Share) keeps the
+      two-bar layout, and the sub-header gives us room to add a
+      second view in the same container later (a "Rule Browser"
+      or "Scan History" panel) without restructuring the slot.
+      The 50px of vertical space we'd save up front is small
+      relative to the structural cost of having to add the header
+      back the first time we want a second view.
