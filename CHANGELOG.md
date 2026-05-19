@@ -4,10 +4,12 @@ All notable changes to the Pipeline-Check VS Code extension. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [0.1.1] — 2026-05-19
 
-PRs landing on `main` between releases append entries here. The release
-commit collapses this section into `## [X.Y.Z] — <date>`.
+Production-readiness pass. v0.1.0 was effectively unusable on a clean
+install (see **Fixed** below); v0.1.1 is the first release that
+actually loads in VS Code. Also lands the Findings panel and the
+security hardening from the pre-marketplace review.
 
 ### Added
 
