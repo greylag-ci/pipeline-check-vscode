@@ -44,7 +44,7 @@ jobs:
     permissions:
       contents: write   # needed by the "Create GitHub release" step
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0   # needed for the merge-base check below
