@@ -179,6 +179,27 @@
           "scope": "machine-overridable",
           "markdownDescription": "Arguments passed to the server command. Default invokes the module via `python -m pipeline_check.lsp`. Scope is `machine-overridable`: workspace overrides require an explicit prompt, since arbitrary args can execute arbitrary code (e.g. `-c \"...\"`)."
         },
+        "pipelineCheck.disabledProviders": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "github-actions",
+              "gitlab",
+              "azure",
+              "bitbucket",
+              "circleci",
+              "cloud-build",
+              "buildkite",
+              "drone",
+              "jenkins",
+              "dockerfile"
+            ]
+          },
+          "uniqueItems": true,
+          "default": [],
+          "markdownDescription": "Providers to silence. Diagnostics for files matching a disabled provider's path glob are dropped before they reach the editor — useful in a monorepo where Pipeline-Check would otherwise lint a Dockerfile from a sub-project that has its own lint pipeline. Empty by default; everything scans. `dockerfile` covers both `Dockerfile` and `Containerfile`."
+        },
         "pipelineCheck.severityThreshold": {
           "type": "string",
           "enum": [

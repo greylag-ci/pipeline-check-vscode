@@ -18,10 +18,15 @@ import {
   ServerOptions,
   TransportKind,
 } from "vscode-languageclient/node";
+import { FindingsCodeLensProvider } from "./codeLens";
 import { FindingsTreeProvider, GroupMode } from "./findingsView";
 import * as clientLog from "./log";
 import { goToFinding } from "./navigate";
-import { TRIGGER_DOCUMENT_SELECTOR } from "./providers";
+import {
+  providerForPath,
+  type ProviderId,
+  TRIGGER_DOCUMENT_SELECTOR,
+} from "./providers";
 import { filterByThreshold } from "./severityFilter";
 import { registerStatusBar } from "./statusBar";
 
@@ -117,9 +122,20 @@ function buildClient(): LanguageClient {
       // pass through unconditionally so the filter never hides
       // legitimate signal when the metadata is absent.
       handleDiagnostics: (uri, diagnostics, next) => {
-        const threshold = vscode.workspace
-          .getConfiguration("pipelineCheck")
-          .get<string>("severityThreshold", "low");
+        const config = vscode.workspace.getConfiguration("pipelineCheck");
+        // Per-provider toggle: if this URI maps to a provider the
+        // user has disabled, drop every diagnostic for it. We still
+        // accept the publish (so a future "unset disable" causes a
+        // fresh publish to reach us), we just blank the list.
+        const disabled = new Set(
+          config.get<string[]>("disabledProviders", []) as ProviderId[],
+        );
+        const provider = providerForPath(uri.fsPath);
+        if (provider && disabled.has(provider)) {
+          next(uri, []);
+          return;
+        }
+        const threshold = config.get<string>("severityThreshold", "low");
         next(uri, filterByThreshold(diagnostics, threshold));
       },
     },
@@ -233,6 +249,15 @@ export async function activate(
   // severity tally. Click reveals the Findings panel. registerStatusBar
   // pushes the item onto context.subscriptions internally.
   registerStatusBar(context);
+  // CodeLens summary at the top of every scanned file. Reads from the
+  // same diagnostic stream the tree does; click navigates to the
+  // Findings panel for drill-down.
+  context.subscriptions.push(
+    vscode.languages.registerCodeLensProvider(
+      [...TRIGGER_DOCUMENT_SELECTOR],
+      new FindingsCodeLensProvider(context),
+    ),
+  );
   context.subscriptions.push(
     findingsView,
     vscode.commands.registerCommand("pipelineCheck.findings.refresh", () =>

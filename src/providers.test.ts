@@ -4,7 +4,13 @@ import { resolve } from "node:path";
 
 vi.mock("vscode", () => ({}));
 
-import { TRIGGER_PATTERNS, TRIGGER_DOCUMENT_SELECTOR } from "./providers";
+import {
+  PROVIDER_IDS,
+  PROVIDERS,
+  TRIGGER_PATTERNS,
+  TRIGGER_DOCUMENT_SELECTOR,
+  providerForPath,
+} from "./providers";
 
 describe("TRIGGER_PATTERNS", () => {
   it("derives a `file`-scoped DocumentFilter for each pattern", () => {
@@ -52,3 +58,59 @@ function expandBraces(pattern: string): string[] {
   const [, head, body, tail] = match;
   return body.split(",").map((alt) => `${head}${alt}${tail}`);
 }
+
+describe("PROVIDERS map", () => {
+  it("covers every entry in PROVIDER_IDS", () => {
+    for (const id of PROVIDER_IDS) {
+      expect(PROVIDERS[id]).toBeDefined();
+      expect(PROVIDERS[id].length).toBeGreaterThan(0);
+    }
+  });
+
+  it("TRIGGER_PATTERNS is the union of every provider's patterns", () => {
+    const flattened = PROVIDER_IDS.flatMap((id) => PROVIDERS[id]);
+    expect([...TRIGGER_PATTERNS].sort()).toEqual([...flattened].sort());
+  });
+});
+
+describe("providerForPath", () => {
+  it("maps GitHub Actions workflow paths", () => {
+    expect(providerForPath("/repo/.github/workflows/release.yml")).toBe(
+      "github-actions",
+    );
+    expect(providerForPath("/repo/.github/workflows/ci.yaml")).toBe(
+      "github-actions",
+    );
+  });
+
+  it("maps the single-file providers", () => {
+    expect(providerForPath("/repo/.gitlab-ci.yml")).toBe("gitlab");
+    expect(providerForPath("/repo/azure-pipelines.yml")).toBe("azure");
+    expect(providerForPath("/repo/bitbucket-pipelines.yml")).toBe("bitbucket");
+    expect(providerForPath("/repo/.circleci/config.yml")).toBe("circleci");
+    expect(providerForPath("/repo/cloudbuild.yaml")).toBe("cloud-build");
+    expect(providerForPath("/repo/.buildkite/pipeline.yml")).toBe("buildkite");
+    expect(providerForPath("/repo/.drone.yml")).toBe("drone");
+    expect(providerForPath("/repo/.drone.yaml")).toBe("drone");
+    expect(providerForPath("/repo/Jenkinsfile")).toBe("jenkins");
+  });
+
+  it("groups Dockerfile and Containerfile under the same id", () => {
+    expect(providerForPath("/repo/Dockerfile")).toBe("dockerfile");
+    expect(providerForPath("/repo/Containerfile")).toBe("dockerfile");
+    expect(providerForPath("/repo/build/Dockerfile")).toBe("dockerfile");
+  });
+
+  it("normalises Windows backslashes before matching", () => {
+    expect(providerForPath("C:\\repo\\.github\\workflows\\ci.yml")).toBe(
+      "github-actions",
+    );
+    expect(providerForPath("C:\\repo\\Dockerfile")).toBe("dockerfile");
+  });
+
+  it("returns undefined for unmatched paths", () => {
+    expect(providerForPath("/repo/package.json")).toBeUndefined();
+    expect(providerForPath("/repo/mkdocs.yml")).toBeUndefined();
+    expect(providerForPath("/repo/values.yaml")).toBeUndefined();
+  });
+});
