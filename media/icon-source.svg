@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Pipeline-Check marketplace icon — concept B (navy shield, teal accent).
+
+  Designed in .claude/design_system/vscode-icon.html and ratified here as
+  the source of truth. Renders to icon.png via scripts/gen_icon.py; do
+  not edit the PNG directly. Colors come from the upstream pipeline-check
+  design tokens: NAVY_950 #04101a, TEAL #1ba3a9.
+
+  At 128×128 the shield + check reads instantly as "security check"; at
+  36×36 (marketplace search-result thumbnail) the strokes stay visible
+  because the check sits on top of solid navy fill rather than relying
+  on contrast against a busy background.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- Solid navy shield with teal accent border. Stroke joins are
+       rounded so the top-left and top-right corners read smooth, not
+       sharp. -->
+  <path d="M 64 12 L 110 26 L 110 62 Q 110 92 64 116 Q 18 92 18 62 L 18 26 Z"
+        fill="#04101a" stroke="#1ba3a9" stroke-width="4" stroke-linejoin="round"/>
+  <!-- Inner ribbon at 25% opacity — subtle "depth" cue without
+       introducing a second colour value. Visible at 128×128, gracefully
+       fades to invisible at 36×36 where it would just be visual noise. -->
+  <path d="M 64 22 L 100 32 L 100 62 Q 100 86 64 106 Q 28 86 28 62 L 28 32 Z"
+        fill="none" stroke="#1ba3a9" stroke-width="1" opacity="0.25"/>
+  <!-- The check itself. Stroke-width 11 is intentionally thick — at
+       36×36 a thinner stroke disappears in the JPEG-style compression
+       the marketplace applies to search-result thumbnails. -->
+  <path d="M 40 64 L 56 80 L 88 48"
+        fill="none" stroke="#1ba3a9" stroke-width="11"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
