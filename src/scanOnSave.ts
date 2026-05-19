@@ -23,8 +23,17 @@ export interface SavedDocument {
 export interface ScanOnSaveDeps {
   /** True when `pipelineCheck.scanOnSave` is enabled. Re-read on each save. */
   readonly isEnabled: () => boolean;
-  /** True when the saved file matches a Pipeline-Check provider glob. */
-  readonly isPipelineFile: (fsPath: string) => boolean;
+  /**
+   * True when a save of `fsPath` should trigger a workspace scan.
+   * Bundles the path-classifier and the disabled-provider check:
+   * a save of a file whose provider is disabled never triggers a
+   * scan, since the user has signaled the findings should be
+   * silenced anyway — re-scanning would just re-publish a batch
+   * the middleware drops on arrival. The combined check also keeps
+   * the "all providers disabled" edge case efficient (every save
+   * short-circuits without enumerating the workspace).
+   */
+  readonly shouldScanOnSave: (fsPath: string) => boolean;
   /** Scan the workspace. Receives no arguments — the handler always quiets. */
   readonly scan: () => Promise<unknown>;
 }
@@ -49,7 +58,7 @@ export function createScanOnSaveHandler(
     // (the common case) costs only one config read and one regex
     // test, not a full scan setup.
     if (!deps.isEnabled()) return;
-    if (!deps.isPipelineFile(doc.uri.fsPath)) return;
+    if (!deps.shouldScanOnSave(doc.uri.fsPath)) return;
     if (busy) return;
     busy = true;
     try {

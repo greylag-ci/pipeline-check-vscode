@@ -483,7 +483,20 @@ export async function activate(
       vscode.workspace
         .getConfiguration("pipelineCheck")
         .get<boolean>("scanOnSave", false),
-    isPipelineFile: (fsPath) => providerForPath(fsPath) !== undefined,
+    // Trigger a scan only when the saved file is (a) something
+    // Pipeline-Check actually scans and (b) belongs to a provider
+    // the user has NOT silenced. Saving a Dockerfile in a workspace
+    // that has `dockerfile` in `disabledProviders` should be a
+    // no-op: re-scanning would just produce a publish the
+    // middleware drops on arrival.
+    shouldScanOnSave: (fsPath) => {
+      const provider = providerForPath(fsPath);
+      if (!provider) return false;
+      const disabled = vscode.workspace
+        .getConfiguration("pipelineCheck")
+        .get<string[]>("disabledProviders", []);
+      return !disabled.includes(provider);
+    },
     scan: () => scanWorkspace({ quiet: true }),
   });
   context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(onSave));

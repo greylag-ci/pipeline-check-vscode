@@ -90,9 +90,26 @@ declare global {
   // URI strings that `openTextDocument` should reject for (simulating
   // a read error / unsupported encoding). All other URIs resolve.
   var __stubOpenTextDocumentFailures: Set<string> | undefined;
+  // Optional gate the openTextDocument stub awaits before resolving.
+  // Tests that want to inspect mid-scan state (e.g. the in-flight
+  // busy-guard test) set this to a Promise they control, kick off
+  // scanWorkspace, then interrogate state while the open is paused.
+  var __stubOpenTextDocumentGate: Promise<unknown> | undefined;
   // When true, `withProgress` reports cancellation back to the task
   // immediately. Used by the scanWorkspace cancellation test.
   var __stubProgressCancelled: boolean | undefined;
+  // Live terminals roster surfaced via `vscode.window.terminals`. The
+  // stub auto-pushes any createTerminal result here; tests can also
+  // pre-populate to simulate a pre-existing (or exited) terminal.
+  var __stubLiveTerminals:
+    | Array<{
+        name: string;
+        exitStatus: { code: number | undefined } | undefined;
+        show: () => void;
+        sendText: (text: string, addNewLine?: boolean) => void;
+        dispose: () => void;
+      }>
+    | undefined;
   var __stubCalls: StubCalls | undefined;
 }
 
@@ -126,7 +143,9 @@ export function resetStubState(): void {
   globalThis.__stubFindFilesByPattern = undefined;
   globalThis.__stubWorkspaceFolders = undefined;
   globalThis.__stubOpenTextDocumentFailures = undefined;
+  globalThis.__stubOpenTextDocumentGate = undefined;
   globalThis.__stubProgressCancelled = undefined;
+  globalThis.__stubLiveTerminals = undefined;
   globalThis.__stubCalls = {
     findFiles: [],
     terminals: [],
@@ -277,13 +296,20 @@ export function vscodeStub(): Record<string, unknown> {
       // Resolves with a minimal TextDocument-shaped object for any
       // URI not listed in `__stubOpenTextDocumentFailures`, where it
       // rejects instead. scanWorkspace counts those rejections as
-      // `failed` without aborting the rest of the scan.
-      openTextDocument: (uri: { toString: () => string }) => {
+      // `failed` without aborting the rest of the scan. When
+      // `__stubOpenTextDocumentGate` is set, the resolution awaits
+      // it first — that lets tests interleave a second scan call
+      // mid-loop to exercise the in-flight busy guard.
+      openTextDocument: async (uri: { toString: () => string }) => {
         const key = uri.toString();
         if (globalThis.__stubOpenTextDocumentFailures?.has(key)) {
-          return Promise.reject(new Error(`stub: open failed for ${key}`));
+          throw new Error(`stub: open failed for ${key}`);
         }
-        return Promise.resolve({ uri });
+        const gate = globalThis.__stubOpenTextDocumentGate;
+        if (gate) {
+          await gate;
+        }
+        return { uri };
       },
     },
     languages: {
@@ -319,9 +345,18 @@ export function vscodeStub(): Record<string, unknown> {
       openExternal: () => Promise.resolve(true),
     },
     window: {
+      // Live terminals roster used by code that walks
+      // `vscode.window.terminals` (e.g. installInTerminal's reuse
+      // check). Tests can pre-populate this slot to simulate a
+      // pre-existing terminal; createTerminal pushes into it.
+      get terminals() {
+        return globalThis.__stubLiveTerminals ?? [];
+      },
       // Terminal factory captures the name and returns a stub whose
-      // show/sendText calls land on the shared slot. Each call returns
-      // a fresh terminal with its own observation buffer.
+      // show/sendText calls land on the shared slot. The returned
+      // terminal is ALSO pushed onto the live `terminals` roster so
+      // an installInTerminal-style reuse lookup finds it. Each call
+      // returns a fresh terminal with its own observation buffer.
       createTerminal: (name: string) => {
         const sent: Array<{ text: string; addNewLine: boolean }> = [];
         const record = {
@@ -330,11 +365,19 @@ export function vscodeStub(): Record<string, unknown> {
           sent,
         };
         ensureCalls().terminals.push(record);
-        return {
+        const terminal: {
+          name: string;
+          exitStatus: { code: number | undefined } | undefined;
+          show: () => void;
+          sendText: (text: string, addNewLine?: boolean) => void;
+          dispose: () => void;
+        } = {
           name,
+          // Undefined => alive. Tests can mutate this slot directly
+          // (or pre-populate __stubLiveTerminals with a closed one)
+          // to exercise the exited-terminal path.
+          exitStatus: undefined,
           show: () => {
-            // Mutate the captured record so tests see `shown: true`
-            // without having to drill into a closure.
             (record as { shown: boolean }).shown = true;
           },
           sendText: (text: string, addNewLine?: boolean) => {
@@ -342,6 +385,10 @@ export function vscodeStub(): Record<string, unknown> {
           },
           dispose: () => undefined,
         };
+        const roster = globalThis.__stubLiveTerminals ?? [];
+        roster.push(terminal);
+        globalThis.__stubLiveTerminals = roster;
+        return terminal;
       },
       createStatusBarItem: (
         _alignment?: number,

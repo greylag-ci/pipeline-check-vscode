@@ -107,9 +107,38 @@ describe("isUpgrade", () => {
     expect(isUpgrade("0.2.0", "0.1.5")).toBe(false);
   });
 
-  it("strips pre-release suffixes so v0.2.0-rc.1 doesn't re-trigger after v0.2.0 stable", () => {
-    expect(isUpgrade("0.2.0-rc.1", "0.2.0")).toBe(false);
+  it("treats rc → ga as an upgrade so pre-release testers see the GA toast", () => {
+    // semver §11: a pre-release version is LOWER precedence than the
+    // corresponding release. The previous behaviour stripped the
+    // suffix and treated them as equal, which silenced the toast at
+    // the worst possible moment (the GA itself).
+    expect(isUpgrade("0.2.0-rc.1", "0.2.0")).toBe(true);
+    expect(isUpgrade("1.0.0-rc.2", "1.0.0")).toBe(true);
+  });
+
+  it("treats ga → rc as a downgrade — no toast on a release-then-prerelease sequence", () => {
+    // The user installed 1.0.0 then somehow installed 1.0.0-rc.2
+    // (manual vsix sideload, marketplace channel switch). The rc is
+    // LOWER precedence; we don't fire the toast.
     expect(isUpgrade("0.2.0", "0.2.0-rc.2")).toBe(false);
+    expect(isUpgrade("1.0.0", "1.0.0-rc.1")).toBe(false);
+  });
+
+  it("compares pre-release suffixes lexicographically when both are pre-release", () => {
+    // rc.1 < rc.2 (string compare matches semver for the suffixes
+    // we actually ship). Notification fires once per rc bump on the
+    // same core triple, which matches what pre-release users want:
+    // see what changed between rc.1 and rc.2.
+    expect(isUpgrade("1.0.0-rc.1", "1.0.0-rc.2")).toBe(true);
+    expect(isUpgrade("1.0.0-rc.2", "1.0.0-rc.1")).toBe(false);
+    expect(isUpgrade("1.0.0-rc.1", "1.0.0-rc.1")).toBe(false);
+  });
+
+  it("a higher core triple wins regardless of pre-release tags", () => {
+    // Pre-release ranking only matters when the core triples match.
+    // 1.0.0-rc.99 → 1.0.1 is an upgrade.
+    expect(isUpgrade("1.0.0-rc.99", "1.0.1")).toBe(true);
+    expect(isUpgrade("1.0.1", "1.0.0-rc.99")).toBe(false);
   });
 
   it("strips a leading 'v' if present", () => {

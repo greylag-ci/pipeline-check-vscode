@@ -31,7 +31,7 @@ function makeDeps(
   const calls = { scan: 0 };
   const deps: ScanOnSaveDeps = {
     isEnabled: overrides.isEnabled ?? (() => true),
-    isPipelineFile: overrides.isPipelineFile ?? (() => true),
+    shouldScanOnSave: overrides.shouldScanOnSave ?? (() => true),
     scan:
       overrides.scan ??
       (() => {
@@ -55,7 +55,7 @@ describe("createScanOnSaveHandler", () => {
   // The handler closes over a single boolean so the busy semantics
   // and the gate checks can be locked down without a real save
   // stream. The cheap-gates-first ordering (isEnabled before
-  // isPipelineFile before busy) is the contract — it means a
+  // shouldScanOnSave before busy) is the contract — it means a
   // non-CI save in a workspace with scanOnSave off pays only one
   // config read.
 
@@ -66,8 +66,12 @@ describe("createScanOnSaveHandler", () => {
     expect(fake.scanCalls).toBe(0);
   });
 
-  it("returns immediately for non-CI files even when enabled", async () => {
-    const fake = makeDeps({ isPipelineFile: () => false });
+  it("returns immediately when shouldScanOnSave gates the file out", async () => {
+    // shouldScanOnSave returns false for either (a) non-CI files
+    // (package.json, mkdocs.yml, etc.) or (b) CI files whose
+    // provider the user has put in `disabledProviders`. Either way
+    // the handler bails before locking the busy flag.
+    const fake = makeDeps({ shouldScanOnSave: () => false });
     const handler = createScanOnSaveHandler(fake.deps);
     await handler(doc("/repo/package.json"));
     expect(fake.scanCalls).toBe(0);
@@ -120,7 +124,7 @@ describe("createScanOnSaveHandler", () => {
     // rest of the session.
     const deps: ScanOnSaveDeps = {
       isEnabled: () => true,
-      isPipelineFile: () => true,
+      shouldScanOnSave: () => true,
       scan: () => Promise.reject(new Error("transient")),
     };
     const handler = createScanOnSaveHandler(deps);
@@ -131,7 +135,7 @@ describe("createScanOnSaveHandler", () => {
     let secondScanFired = false;
     const handler2 = createScanOnSaveHandler({
       isEnabled: () => true,
-      isPipelineFile: () => true,
+      shouldScanOnSave: () => true,
       scan: () => {
         secondScanFired = true;
         return Promise.resolve();
@@ -158,24 +162,49 @@ describe("createScanOnSaveHandler", () => {
     await inFlight;
   });
 
-  it("checks isEnabled BEFORE isPipelineFile (cheap gate first)", async () => {
+  it("checks isEnabled BEFORE shouldScanOnSave (cheap gate first)", async () => {
     // When scanOnSave is off, we shouldn't even bother classifying
     // the saved path. Locks down the cheap-gates-first ordering so
     // a future refactor doesn't accidentally invert it and add a
     // providerForPath call on every save in a workspace that has
     // scan-on-save disabled.
-    let pipelineFileCalls = 0;
+    let shouldScanCalls = 0;
     const deps: ScanOnSaveDeps = {
       isEnabled: () => false,
-      isPipelineFile: () => {
-        pipelineFileCalls += 1;
+      shouldScanOnSave: () => {
+        shouldScanCalls += 1;
         return true;
       },
       scan: () => Promise.resolve(),
     };
     const handler = createScanOnSaveHandler(deps);
     await handler(doc("/repo/.gitlab-ci.yml"));
-    expect(pipelineFileCalls).toBe(0);
+    expect(shouldScanCalls).toBe(0);
+  });
+
+  it("re-evaluates shouldScanOnSave on every save (disabled-providers can flip)", async () => {
+    // A user updates `pipelineCheck.disabledProviders` mid-session
+    // and saves again; the handler must consult the live value, not
+    // a snapshot taken at construction.
+    let disabled = false;
+    const fake = makeDeps({
+      shouldScanOnSave: () => !disabled,
+    });
+    const handler = createScanOnSaveHandler(fake.deps);
+    const first = handler(doc("/repo/Dockerfile"));
+    fake.scanResolvers[0]();
+    await first;
+    expect(fake.scanCalls).toBe(1);
+    // Now silence the provider.
+    disabled = true;
+    await handler(doc("/repo/Dockerfile"));
+    expect(fake.scanCalls).toBe(1); // no new scan
+    // And unsilence.
+    disabled = false;
+    const third = handler(doc("/repo/Dockerfile"));
+    fake.scanResolvers[1]();
+    await third;
+    expect(fake.scanCalls).toBe(2);
   });
 
   it("each handler instance has its own busy flag (no cross-instance lock)", async () => {

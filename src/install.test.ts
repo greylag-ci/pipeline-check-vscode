@@ -62,6 +62,69 @@ describe("installInTerminal", () => {
     installInTerminal();
     expect(globalThis.__stubCalls?.clipboardWrites).toEqual([]);
   });
+
+  it("reuses the existing 'Pipeline-Check install' terminal on a second call", () => {
+    // A user who clicks "Install in terminal" twice — once from the
+    // welcome panel, then again from the LSP-failure toast — used to
+    // get two identical terminals stacked in the dropdown. Now the
+    // second call surfaces the same terminal. The createTerminal
+    // call count is the canonical assertion.
+    const first = installInTerminal();
+    const second = installInTerminal();
+    expect(second).toBe(first);
+    expect(globalThis.__stubCalls?.terminals).toHaveLength(1);
+  });
+
+  it("the reused terminal still gets show() + sendText() so it's visible and primed", () => {
+    installInTerminal();
+    installInTerminal();
+    const t = globalThis.__stubCalls!.terminals[0];
+    expect(t.shown).toBe(true);
+    // sendText fired twice (once per call); the same command text.
+    expect(t.sent).toHaveLength(2);
+    expect(t.sent[0].text).toBe(PIP_INSTALL_COMMAND);
+    expect(t.sent[1].text).toBe(PIP_INSTALL_COMMAND);
+  });
+
+  it("treats an exited terminal as dead and creates a fresh one", () => {
+    // A user closed the prior install terminal after running pip,
+    // then triggered the install again. Reusing the dead terminal
+    // would silently fail (sendText is a no-op on an exited
+    // pty); a fresh one is the right answer.
+    const first = installInTerminal();
+    // Simulate the user closing the terminal: mark the live entry
+    // as exited.
+    const live = globalThis.__stubLiveTerminals?.[0];
+    if (live) live.exitStatus = { code: 0 };
+    const second = installInTerminal();
+    expect(second).not.toBe(first);
+    expect(globalThis.__stubCalls?.terminals).toHaveLength(2);
+  });
+
+  it("ignores other terminals whose name differs", () => {
+    // A user's `bash` / `python REPL` terminal must not be hijacked
+    // by the install command. Only terminals named exactly
+    // 'Pipeline-Check install' qualify for reuse.
+    // Pre-populate the live roster with a same-named-but-foreign
+    // terminal... actually the simpler check: a foreign terminal
+    // with a different name must not be reused.
+    globalThis.__stubLiveTerminals = [
+      {
+        name: "bash",
+        exitStatus: undefined,
+        show: () => undefined,
+        sendText: () => undefined,
+        dispose: () => undefined,
+      },
+    ];
+    installInTerminal();
+    // createTerminal was called (because the bash terminal didn't
+    // match by name), and the resulting terminal is the one we just
+    // sent the command to.
+    const terminals = globalThis.__stubCalls?.terminals ?? [];
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].name).toBe("Pipeline-Check install");
+  });
 });
 
 describe("copyInstallCommandToClipboard", () => {
