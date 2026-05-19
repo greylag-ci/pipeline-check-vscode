@@ -70,7 +70,7 @@ codium --install-extension greylag-ci.pipeline-check
 The extension is a thin LSP client; the rule engine itself runs in Python and must be installed separately:
 
 ```bash
-pip install "pipeline-check[lsp]"
+python -m pip install "pipeline-check[lsp]"
 ```
 
 ## Requirements

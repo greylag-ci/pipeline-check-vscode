@@ -98,6 +98,12 @@ declare global {
   // When true, `withProgress` reports cancellation back to the task
   // immediately. Used by the scanWorkspace cancellation test.
   var __stubProgressCancelled: boolean | undefined;
+  // Listeners registered via `onDidChangeWorkspaceFolders`. Tests fire
+  // the event by iterating this list manually. The stub appends on
+  // each registration and prunes on dispose.
+  var __stubWorkspaceFoldersListeners:
+    | Array<(e: unknown) => void>
+    | undefined;
   // Live terminals roster surfaced via `vscode.window.terminals`. The
   // stub auto-pushes any createTerminal result here; tests can also
   // pre-populate to simulate a pre-existing (or exited) terminal.
@@ -145,6 +151,7 @@ export function resetStubState(): void {
   globalThis.__stubOpenTextDocumentFailures = undefined;
   globalThis.__stubOpenTextDocumentGate = undefined;
   globalThis.__stubProgressCancelled = undefined;
+  globalThis.__stubWorkspaceFoldersListeners = undefined;
   globalThis.__stubLiveTerminals = undefined;
   globalThis.__stubCalls = {
     findFiles: [],
@@ -276,6 +283,24 @@ export function vscodeStub(): Record<string, unknown> {
       }),
       onDidChangeConfiguration: () => ({ dispose: () => undefined }),
       onDidSaveTextDocument: () => ({ dispose: () => undefined }),
+      // Registers a listener that tests can fire by calling the
+      // function stored in `globalThis.__stubFireWorkspaceFoldersChange`.
+      // The status-bar relevance recheck wires here; firing the event
+      // (after mutating `__stubWorkspaceFolders` to simulate the
+      // user removing a folder) drives the latch-release path.
+      onDidChangeWorkspaceFolders: (
+        listener: (e: unknown) => void,
+      ) => {
+        const fns = globalThis.__stubWorkspaceFoldersListeners ?? [];
+        fns.push(listener);
+        globalThis.__stubWorkspaceFoldersListeners = fns;
+        return {
+          dispose: () => {
+            const i = fns.indexOf(listener);
+            if (i >= 0) fns.splice(i, 1);
+          },
+        };
+      },
       // Resolves with whatever the test stashed on
       // `globalThis.__stubFindFiles` (a flat URI list reused for every
       // include glob) or `globalThis.__stubFindFilesByPattern[include]`

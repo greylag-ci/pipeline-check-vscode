@@ -200,6 +200,13 @@ const WORKSPACE_HAS_CI_GLOB =
  * monorepo / multi-window setups. Once the workspace has been
  * "seen" as relevant, the item stays visible even when findings
  * fall to zero (so the "clean" signal earns its keep).
+ *
+ * The relevance state RELEASES when the user removes the last CI
+ * folder from a multi-root workspace — otherwise the item would stay
+ * pinned with "clean" for the rest of the session even though the
+ * workspace no longer has anything to scan. The release is gated on
+ * a fresh `findFiles` sweep so a momentary "no current findings" state
+ * (e.g. an in-flight rebuild) doesn't accidentally hide the item.
  */
 export function registerStatusBar(
   context: vscode.ExtensionContext,
@@ -211,8 +218,9 @@ export function registerStatusBar(
   item.command = "pipelineCheck.findings.focus";
   item.name = "Pipeline-Check";
 
-  // Latches once: as soon as we've seen evidence this workspace is
-  // CI-relevant, we keep showing the item.
+  // Latches when we observe evidence of CI relevance, releases when
+  // the workspace stops having any. The release path is the only
+  // reason this isn't a one-way latch.
   let relevant = false;
 
   const update = () => {
@@ -233,23 +241,49 @@ export function registerStatusBar(
     }
   };
 
-  // One-shot scan to learn whether the workspace has any candidate
-  // files at all. If yes, the item is allowed to show immediately
-  // (with `clean` text until the first publish arrives). If not, we
-  // wait — first diagnostic publish flips `relevant` and unblocks.
-  void vscode.workspace
-    .findFiles(WORKSPACE_HAS_CI_GLOB, "**/{node_modules,.git}/**", 1)
-    .then((uris) => {
-      if (uris.length > 0) {
-        relevant = true;
+  /**
+   * Re-evaluate workspace relevance by sweeping for any CI file under
+   * the current folders. Sets `relevant` accordingly and refreshes
+   * the item. Used at activation and again every time the user
+   * adds/removes a workspace folder.
+   */
+  const recheckRelevance = () => {
+    void vscode.workspace
+      .findFiles(WORKSPACE_HAS_CI_GLOB, "**/{node_modules,.git}/**", 1)
+      .then((uris) => {
+        if (uris.length > 0) {
+          relevant = true;
+        } else {
+          // No candidate files anywhere in the workspace. If we
+          // ALSO have no current diagnostics, the item should go
+          // back to hidden — the workspace has nothing to do with
+          // Pipeline-Check right now. The diagnostic check inside
+          // `update()` will re-latch immediately if a publish lands.
+          const counts = countDiagnostics(vscode.languages.getDiagnostics());
+          const total =
+            counts.CRITICAL +
+            counts.HIGH +
+            counts.MEDIUM +
+            counts.LOW +
+            counts.INFO;
+          if (total === 0) {
+            relevant = false;
+          }
+        }
         update();
-      }
-    });
+      });
+  };
 
+  recheckRelevance();
   update();
   context.subscriptions.push(
     item,
     vscode.languages.onDidChangeDiagnostics(update),
+    // Re-sweep whenever the workspace shape changes — the user added
+    // or removed a folder via the Workspaces UI. Without this, removing
+    // the only CI folder would leave the status bar pinned to "clean"
+    // for the rest of the session.
+    vscode.workspace.onDidChangeWorkspaceFolders(recheckRelevance),
   );
 
   return item;

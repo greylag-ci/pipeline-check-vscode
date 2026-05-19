@@ -17,5 +17,5 @@ repository.
 Requires the upstream server to be installed:
 
 ```bash
-pip install "pipeline-check[lsp]"
+python -m pip install "pipeline-check[lsp]"
 ```
