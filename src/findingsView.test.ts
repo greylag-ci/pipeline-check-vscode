@@ -1,110 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// findingsView.ts imports `vscode` at the top, which is supplied by the
-// editor at runtime and isn't installable from npm. We stub just the
-// surface findingsView actually touches: classes it instantiates
-// (`ThemeIcon`, `ThemeColor`, `EventEmitter`, `TreeItem`,
-// `MarkdownString`, `Uri`) plus the static method it calls
-// (`workspace.asRelativePath`, `languages.getDiagnostics`,
-// `languages.onDidChangeDiagnostics`, `commands.executeCommand`).
-//
-// `vi.mock` must run before the SUT is imported. The factory must not
-// reference outer-scope variables (vitest hoists it), so the mutable
-// state (`stubDiagnostics`) lives on `globalThis` and the
-// `getDiagnostics` stub reads from there.
-vi.mock("vscode", () => {
-  class ThemeIcon {
-    constructor(
-      public readonly id: string,
-      public readonly color?: ThemeColor,
-    ) {}
-  }
-  class ThemeColor {
-    constructor(public readonly id: string) {}
-  }
-  class EventEmitter<T> {
-    private listeners: Array<(e: T) => void> = [];
-    fire(e: T): void {
-      for (const l of this.listeners) l(e);
-    }
-    get event() {
-      return (listener: (e: T) => void) => {
-        this.listeners.push(listener);
-        return { dispose: () => undefined };
-      };
-    }
-    dispose(): void {
-      this.listeners = [];
-    }
-  }
-  class TreeItem {
-    iconPath?: unknown;
-    description?: string;
-    tooltip?: unknown;
-    command?: unknown;
-    contextValue?: string;
-    constructor(
-      public readonly label: string,
-      public readonly collapsibleState: number,
-    ) {}
-  }
-  class MarkdownString {
-    isTrusted = false;
-    supportThemeIcons = false;
-    constructor(public value: string) {}
-    appendMarkdown(s: string): this {
-      this.value += s;
-      return this;
-    }
-  }
-  const Uri = {
-    parse: (s: string) => {
-      const noScheme = s.replace(/^file:\/\//, "");
-      return {
-        toString: () => s,
-        path: noScheme,
-        fsPath: noScheme,
-      };
-    },
-  };
-  const TreeItemCollapsibleState = { None: 0, Collapsed: 1, Expanded: 2 };
-  return {
-    ThemeIcon,
-    ThemeColor,
-    EventEmitter,
-    TreeItem,
-    MarkdownString,
-    TreeItemCollapsibleState,
-    Uri,
-    workspace: {
-      asRelativePath: (uri: { fsPath?: string; path?: string }) =>
-        uri.fsPath ?? uri.path ?? "",
-    },
-    languages: {
-      // Two call shapes:
-      //   - `getDiagnostics()` returns every [uri, diagnostic[]] pair
-      //   - `getDiagnostics(uri)` returns just that uri's diagnostics
-      // The provider's batch-skip path uses the second form; the
-      // collection path uses the first.
-      getDiagnostics: (uri?: { toString: () => string }) => {
-        const all =
-          (
-            globalThis as {
-              __stubDiagnostics?: Array<[
-                { toString: () => string },
-                unknown[],
-              ]>;
-            }
-          ).__stubDiagnostics ?? [];
-        if (uri === undefined) return all;
-        const key = uri.toString();
-        const match = all.find(([u]) => u.toString() === key);
-        return match ? match[1] : [];
-      },
-      onDidChangeDiagnostics: () => ({ dispose: () => undefined }),
-    },
-    commands: { executeCommand: () => Promise.resolve() },
-  };
+// The shared vscode stub in src/__testStubs__/vscode.ts covers the
+// surface findingsView reaches into. The async factory below is the
+// only safe way to share it: vi.mock hoists above imports and the
+// factory cannot reference outer-scope bindings synchronously.
+vi.mock("vscode", async () => {
+  const { vscodeStub } = await import("./__testStubs__/vscode");
+  return vscodeStub();
 });
 
 // Import after the mock is registered.

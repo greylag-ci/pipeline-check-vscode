@@ -109,6 +109,28 @@
         "title": "Change Grouping",
         "category": "Pipeline-Check",
         "icon": "$(list-tree)"
+      },
+      {
+        "command": "pipelineCheck.goToNextFinding",
+        "title": "Go to Next Finding",
+        "category": "Pipeline-Check"
+      },
+      {
+        "command": "pipelineCheck.goToPreviousFinding",
+        "title": "Go to Previous Finding",
+        "category": "Pipeline-Check"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "pipelineCheck.goToNextFinding",
+        "key": "alt+f8",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "pipelineCheck.goToPreviousFinding",
+        "key": "shift+alt+f8",
+        "when": "editorTextFocus"
       }
     ],
     "menus": {

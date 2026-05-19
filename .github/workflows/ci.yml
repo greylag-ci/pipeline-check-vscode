@@ -41,6 +41,15 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Marketplace description length
+        # The marketplace truncates listing descriptions around 145
+        # characters in search results. Anything longer loses signal
+        # before users click through. The current copy hugs the limit
+        # deliberately — this step keeps future edits honest.
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          node -e 'const d=require("./package.json").description; if(d.length>145){console.error("description is "+d.length+" chars (max 145):",d);process.exit(1)}'
+
       - name: TypeScript compile
         run: npm run compile
 

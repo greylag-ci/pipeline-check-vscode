@@ -19,6 +19,9 @@ import {
   TransportKind,
 } from "vscode-languageclient/node";
 import { FindingsTreeProvider, GroupMode } from "./findingsView";
+import * as clientLog from "./log";
+import { goToFinding } from "./navigate";
+import { TRIGGER_DOCUMENT_SELECTOR } from "./providers";
 import { filterByThreshold } from "./severityFilter";
 import { registerStatusBar } from "./statusBar";
 
@@ -95,21 +98,11 @@ function buildClient(): LanguageClient {
   // in the first place — smaller cross-section, no dependency on whether
   // the user has the official GitHub Actions extension installed
   // (which would otherwise hijack the `github-actions-workflow`
-  // language ID for `.github/workflows/*.yml`).
+  // language ID for `.github/workflows/*.yml`). The pattern list itself
+  // lives in providers.ts so the documentSelector, activationEvents,
+  // and the workspace-scan command can't drift apart.
   const clientOptions: LanguageClientOptions = {
-    documentSelector: [
-      { scheme: "file", pattern: "**/.github/workflows/*.{yml,yaml}" },
-      { scheme: "file", pattern: "**/.gitlab-ci.yml" },
-      { scheme: "file", pattern: "**/azure-pipelines.yml" },
-      { scheme: "file", pattern: "**/bitbucket-pipelines.yml" },
-      { scheme: "file", pattern: "**/.circleci/config.yml" },
-      { scheme: "file", pattern: "**/cloudbuild.yaml" },
-      { scheme: "file", pattern: "**/.buildkite/pipeline.yml" },
-      { scheme: "file", pattern: "**/.drone.{yml,yaml}" },
-      { scheme: "file", pattern: "**/Jenkinsfile" },
-      { scheme: "file", pattern: "**/Dockerfile" },
-      { scheme: "file", pattern: "**/Containerfile" },
-    ],
+    documentSelector: [...TRIGGER_DOCUMENT_SELECTOR],
     synchronize: {
       configurationSection: "pipelineCheck",
     },
@@ -153,8 +146,14 @@ async function startClient(): Promise<void> {
   // drop the broken client on failure (the "Open server log" action
   // below still needs to focus it to surface the server's traceback).
   const outputChannel: vscode.OutputChannel = client.outputChannel;
+  // Point the client-side logger at the same channel the LSP server
+  // writes to, so [client] and [server] lines interleave with shared
+  // timestamps — much easier to read when triaging a bug report.
+  clientLog.setLogChannel(outputChannel);
   try {
+    clientLog.info("language server: starting");
     await client.start();
+    clientLog.info("language server: started");
   } catch (err) {
     // The most common cause is `python -m pipeline_check.lsp` failing:
     // either Python is not on PATH or the [lsp] extra is not installed.
@@ -163,6 +162,7 @@ async function startClient(): Promise<void> {
     // notification body. The notification chrome already shows the
     // extension name, so the message body doesn't repeat it.
     const message = err instanceof Error ? err.message : String(err);
+    clientLog.error(`language server: failed to start — ${message}`);
     const choice = await vscode.window.showErrorMessage(
       `Language server failed to start (${message}).`,
       "Copy install command",
@@ -241,6 +241,12 @@ export async function activate(
     vscode.commands.registerCommand(
       "pipelineCheck.findings.changeGrouping",
       () => changeGrouping(findingsProvider),
+    ),
+    vscode.commands.registerCommand("pipelineCheck.goToNextFinding", () =>
+      goToFinding("next"),
+    ),
+    vscode.commands.registerCommand("pipelineCheck.goToPreviousFinding", () =>
+      goToFinding("previous"),
     ),
     vscode.commands.registerCommand("pipelineCheck.restart", async () => {
       await stopClient();
