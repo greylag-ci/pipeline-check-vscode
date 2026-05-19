@@ -79,6 +79,25 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: npm audit --omit=dev --audit-level=high
 
+      - name: Dogfood — pipeline-check on our own workflows
+        # Run the published pipeline-check action against this repo's
+        # `.github/workflows/`. Catches GHA-rule regressions in our own
+        # CI/release pipeline before they ship, and exercises the tool
+        # end-to-end from the same surface marketplace users invoke.
+        # Linux-only — the action runs once per workspace, not once per
+        # matrix leg. `fail-on: HIGH` gates: HIGH+ findings break the
+        # build; LOW/MEDIUM stay informational so a single style nit
+        # doesn't block contributors.
+        if: matrix.os == 'ubuntu-latest'
+        # Pinned to a specific tag — the upstream action repo doesn't
+        # publish a floating `v1` major tag, so a bare `@v1` reference
+        # fails the actions resolver. Dependabot's github-actions
+        # updater bumps this line on new releases.
+        uses: dmartinochoa/pipeline-check@v1.0.5
+        with:
+          pipeline: github
+          fail-on: HIGH
+
       - name: Verify vsix packs cleanly
         # vsce is a pinned devDependency (see package.json) — Dependabot
         # bumps it via the npm config. `npm ci` has already installed it.
