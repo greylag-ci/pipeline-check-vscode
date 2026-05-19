@@ -21,13 +21,18 @@ const DIAGNOSTIC_SOURCE = "pipeline-check";
 const SEVERITY_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"] as const;
 type SeverityName = (typeof SEVERITY_ORDER)[number];
 
-// Per-bucket icon. CRITICAL and HIGH both render as ``error`` because
-// the LSP severity enum collapses them — keeping the panel consistent
-// with the editor gutter avoids the "red squiggle but yellow tree
-// row" confusion.
+// Per-bucket icon. CRITICAL renders as ``flame`` (still red-themed)
+// so the severity-grouped tree can distinguish CRITICAL from HIGH at
+// a glance; the editor gutter does not have a "more red than red"
+// state so it still collapses the two — that asymmetry is fine
+// because the gutter and the tree answer different questions.
+// INFO uses a full-size codicon themed to ``descriptionForeground``
+// so it is visibly the quietest row instead of inheriting the
+// default foreground (which in dark themes is brighter than LOW's
+// blue, inverting the severity gradient).
 const SEVERITY_ICON: Record<SeverityName, vscode.ThemeIcon> = {
   CRITICAL: new vscode.ThemeIcon(
-    "error",
+    "flame",
     new vscode.ThemeColor("errorForeground"),
   ),
   HIGH: new vscode.ThemeIcon(
@@ -42,7 +47,21 @@ const SEVERITY_ICON: Record<SeverityName, vscode.ThemeIcon> = {
     "info",
     new vscode.ThemeColor("editorInfo.foreground"),
   ),
-  INFO: new vscode.ThemeIcon("circle-small-filled"),
+  INFO: new vscode.ThemeIcon(
+    "circle-outline",
+    new vscode.ThemeColor("descriptionForeground"),
+  ),
+};
+
+// Numeric rank for ``maxSeverity`` aggregation. Mirrors the order in
+// SEVERITY_ORDER but inverted so a higher number means more severe —
+// matches ``Math.max`` semantics naturally.
+const SEVERITY_RANK: Record<SeverityName, number> = {
+  CRITICAL: 4,
+  HIGH: 3,
+  MEDIUM: 2,
+  LOW: 1,
+  INFO: 0,
 };
 
 export type GroupMode = "severity" | "file" | "rule";
@@ -59,6 +78,10 @@ type GroupNode = {
   readonly label: string;
   readonly icon?: vscode.ThemeIcon;
   readonly description?: string;
+  // Used in file-mode to carry the workspace-relative path without
+  // burning description-column width. Group descriptions stay
+  // count-only so the right-edge of the tree scans uniformly.
+  readonly tooltip?: string;
   readonly children: readonly TreeNode[];
 };
 
@@ -74,6 +97,12 @@ export class FindingsTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private groupMode: GroupMode = "severity";
+  // Two-phase wiring: the view is created with the provider as an
+  // argument (constructor side), then the caller hands the view back
+  // via setTreeView so we can drive its ``badge``. The optional type
+  // makes the pre-wiring window explicit — refresh() called before
+  // setTreeView simply skips the badge update.
+  private treeView: vscode.TreeView<TreeNode> | undefined;
 
   constructor(context: vscode.ExtensionContext) {
     // VS Code does not expose a per-source filter on the diagnostic-
@@ -94,6 +123,15 @@ export class FindingsTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     );
   }
 
+  setTreeView(view: vscode.TreeView<TreeNode>): void {
+    this.treeView = view;
+    this.updateBadge();
+  }
+
+  getGroupMode(): GroupMode {
+    return this.groupMode;
+  }
+
   setGroupMode(mode: GroupMode): void {
     if (this.groupMode === mode) {
       return;
@@ -109,6 +147,7 @@ export class FindingsTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 
   refresh(): void {
     this._onDidChangeTreeData.fire();
+    this.updateBadge();
   }
 
   getTreeItem(node: TreeNode): vscode.TreeItem {
@@ -119,6 +158,9 @@ export class FindingsTreeProvider implements vscode.TreeDataProvider<TreeNode> {
       );
       item.iconPath = node.icon;
       item.description = node.description;
+      if (node.tooltip) {
+        item.tooltip = node.tooltip;
+      }
       item.contextValue = "pipelineCheck.group";
       return item;
     }
@@ -129,29 +171,25 @@ export class FindingsTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     if (!node) {
       return this.buildRoot();
     }
-    if (node.kind === "group") {
-      return [...node.children];
-    }
-    return [];
+    // Leaves are constructed with ``CollapsibleState.None``; VS Code
+    // never asks them for children. Group nodes are the only thing
+    // we expand.
+    return node.kind === "group" ? [...node.children] : [];
   }
 
   private leafItem(f: Finding): vscode.TreeItem {
     // The server composes "title\n\ndescription\n\nFix: ..." (see
     // diagnostics.py:_compose_message); the first line is the title
-    // and the rest belongs in the tooltip.
+    // and the rest belongs in the tooltip. Markdown handles the
+    // paragraph rhythm on its own — no need for explicit dividers.
     const title = f.diagnostic.message.split("\n", 1)[0];
-    const labelText = f.ruleId ? `${f.ruleId}: ${title}` : title;
     const item = new vscode.TreeItem(
-      labelText,
+      title,
       vscode.TreeItemCollapsibleState.None,
     );
     item.iconPath = SEVERITY_ICON[f.severity];
-    item.description = workspaceRelative(f.uri);
-    item.tooltip = new vscode.MarkdownString(
-      // Render the multi-paragraph message with explicit dividers so
-      // markdown handles the spacing predictably across themes.
-      f.diagnostic.message.replaceAll("\n\n", "\n\n---\n\n"),
-    );
+    item.description = composeLeafDescription(f, this.groupMode);
+    item.tooltip = new vscode.MarkdownString(f.diagnostic.message);
     item.command = {
       command: "vscode.open",
       title: "Reveal finding",
@@ -182,6 +220,50 @@ export class FindingsTreeProvider implements vscode.TreeDataProvider<TreeNode> {
         return groupByRule(all);
     }
   }
+
+  private updateBadge(): void {
+    if (!this.treeView) {
+      return;
+    }
+    const total = collectFindings().length;
+    this.treeView.badge =
+      total === 0
+        ? undefined
+        : {
+            value: total,
+            tooltip: `${total} Pipeline-Check finding${total === 1 ? "" : "s"}`,
+          };
+  }
+}
+
+// Compose the description column for a leaf row. The format adapts
+// to the active grouping so we never repeat information the parent
+// group already carries:
+//
+//   severity-mode → "GHA-001 · release.yml:23"
+//   file-mode     → "GHA-001 · L23"   (file is the parent)
+//   rule-mode     → "release.yml:23"  (rule is the parent)
+//
+// The ``file.yml:23`` form mirrors what compilers emit and what
+// VS Code's status bar uses — familiar at a glance.
+function composeLeafDescription(f: Finding, mode: GroupMode): string {
+  const line = f.diagnostic.range.start.line + 1;
+  const fileRef = `${basenameFromUri(f.uri)}:${line}`;
+  const parts: string[] = [];
+  if (mode === "file") {
+    if (f.ruleId) {
+      parts.push(f.ruleId);
+    }
+    parts.push(`L${line}`);
+  } else if (mode === "rule") {
+    parts.push(fileRef);
+  } else {
+    if (f.ruleId) {
+      parts.push(f.ruleId);
+    }
+    parts.push(fileRef);
+  }
+  return parts.join(" · ");
 }
 
 function collectFindings(): Finding[] {
@@ -233,6 +315,19 @@ function readRuleId(diag: vscode.Diagnostic): string {
   return "";
 }
 
+function maxSeverity(findings: readonly Finding[]): SeverityName {
+  // Empty input would mean an empty bucket reached the icon-picking
+  // step, which the callers prevent. Defensive return keeps the
+  // return type narrow.
+  let best: SeverityName = "INFO";
+  for (const f of findings) {
+    if (SEVERITY_RANK[f.severity] > SEVERITY_RANK[best]) {
+      best = f.severity;
+    }
+  }
+  return best;
+}
+
 function groupBySeverity(findings: readonly Finding[]): GroupNode[] {
   const buckets = new Map<SeverityName, Finding[]>();
   for (const f of findings) {
@@ -271,11 +366,19 @@ function groupByFile(findings: readonly Finding[]): GroupNode[] {
     .map(([key, items]): GroupNode => {
       const uri = vscode.Uri.parse(key);
       items.sort(compareByLocation);
+      // Parent dir moves to the tooltip so the description column
+      // stays count-only across all three group modes — a uniform
+      // right edge is easier to scan than the mixed
+      // "5 · workflows" / "5" / "5" shapes we had before. The
+      // basename alone disambiguates inside the same directory; the
+      // tooltip handles same-basename-different-directory collisions
+      // (workflows/release.yml vs pipelines/release.yml).
       return {
         kind: "group",
         label: basenameFromUri(uri),
         icon: new vscode.ThemeIcon("file"),
-        description: `${items.length} · ${parentDir(uri)}`,
+        description: String(items.length),
+        tooltip: workspaceRelative(uri),
         children: items.map((finding) => ({ kind: "leaf", finding })),
       };
     });
@@ -295,10 +398,12 @@ function groupByRule(findings: readonly Finding[]): GroupNode[] {
       items.sort(compareByLocation);
       return {
         kind: "group",
-        // Severity icon on the rule node so the tree carries a
-        // severity signal at every depth, not just the leaves.
+        // Aggregate by max severity so a rule with one CRITICAL +
+        // four LOW findings reads as red, not blue. (The previous
+        // implementation picked items[0] after a path/line sort —
+        // the icon was effectively random with respect to severity.)
         label: rule,
-        icon: SEVERITY_ICON[items[0].severity],
+        icon: SEVERITY_ICON[maxSeverity(items)],
         description: String(items.length),
         children: items.map((finding) => ({ kind: "leaf", finding })),
       };
@@ -322,10 +427,4 @@ function basenameFromUri(uri: vscode.Uri): string {
 
 function workspaceRelative(uri: vscode.Uri): string {
   return vscode.workspace.asRelativePath(uri, false);
-}
-
-function parentDir(uri: vscode.Uri): string {
-  const rel = workspaceRelative(uri);
-  const sepIndex = Math.max(rel.lastIndexOf("/"), rel.lastIndexOf("\\"));
-  return sepIndex >= 0 ? rel.slice(0, sepIndex) : "";
 }

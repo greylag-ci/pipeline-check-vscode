@@ -232,8 +232,8 @@ describe("FindingsTreeProvider — group by file", () => {
     const roots = p.getChildren();
     const labels = roots.map((n) => (n.kind === "group" ? n.label : ""));
     expect(labels).toEqual(["first.yml", "last.yml"]);
-    expect(roots[0].kind === "group" && roots[0].description).toMatch(/^2 ·/);
-    expect(roots[1].kind === "group" && roots[1].description).toMatch(/^1 ·/);
+    expect(roots[0].kind === "group" && roots[0].description).toBe("2");
+    expect(roots[1].kind === "group" && roots[1].description).toBe("1");
   });
 });
 
@@ -279,9 +279,9 @@ describe("FindingsTreeProvider — leaf items", () => {
     expect(item.contextValue).toBe("pipelineCheck.group");
   });
 
-  it("leaf item carries the rule id, first line as title, and a reveal command", () => {
+  it("leaf label is the title (first line); rule id and location ride on the description", () => {
     setStubDiagnostics([
-      { file: "a.yml", rule: "GHA-001", severity: "HIGH" },
+      { file: "a.yml", rule: "GHA-001", severity: "HIGH", line: 22 },
     ]);
     const p = new FindingsTreeProvider(ctx);
     p.setGroupMode("severity");
@@ -289,10 +289,132 @@ describe("FindingsTreeProvider — leaf items", () => {
     const leaves = p.getChildren(roots[0]);
     expect(leaves.length).toBe(1);
     const item = p.getTreeItem(leaves[0]);
-    expect(item.label).toBe("GHA-001: GHA-001 title");
+    expect(item.label).toBe("GHA-001 title");
     expect(item.contextValue).toBe("pipelineCheck.finding");
+    expect(item.description).toBe("GHA-001 · a.yml:23");
     const cmd = (item as { command?: { command: string } }).command;
     expect(cmd?.command).toBe("vscode.open");
+  });
+});
+
+describe("FindingsTreeProvider — adaptive leaf description", () => {
+  // The description column avoids repeating information the parent
+  // group already carries. Keeps the visual rhythm consistent across
+  // group modes.
+
+  it("severity-mode shows 'RULE · file:line' (group carries the severity)", () => {
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "HIGH", line: 4 },
+    ]);
+    const p = new FindingsTreeProvider(ctx);
+    p.setGroupMode("severity");
+    const roots = p.getChildren();
+    const leaves = p.getChildren(roots[0]);
+    expect(p.getTreeItem(leaves[0]).description).toBe("GHA-001 · a.yml:5");
+  });
+
+  it("file-mode shows 'RULE · Lline' (group carries the file)", () => {
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "HIGH", line: 4 },
+    ]);
+    const p = new FindingsTreeProvider(ctx);
+    p.setGroupMode("file");
+    const roots = p.getChildren();
+    const leaves = p.getChildren(roots[0]);
+    expect(p.getTreeItem(leaves[0]).description).toBe("GHA-001 · L5");
+  });
+
+  it("rule-mode shows 'file:line' (group carries the rule)", () => {
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "HIGH", line: 4 },
+    ]);
+    const p = new FindingsTreeProvider(ctx);
+    p.setGroupMode("rule");
+    const roots = p.getChildren();
+    const leaves = p.getChildren(roots[0]);
+    expect(p.getTreeItem(leaves[0]).description).toBe("a.yml:5");
+  });
+
+  it("converts the 0-based LSP line to 1-based display", () => {
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "HIGH", line: 0 },
+    ]);
+    const p = new FindingsTreeProvider(ctx);
+    p.setGroupMode("file");
+    const roots = p.getChildren();
+    const leaves = p.getChildren(roots[0]);
+    expect(p.getTreeItem(leaves[0]).description).toBe("GHA-001 · L1");
+  });
+
+  it("omits the rule id from the description when none is present", () => {
+    setStubDiagnostics([
+      { file: "a.yml", rule: "", severity: "HIGH", line: 4 },
+    ]);
+    const p = new FindingsTreeProvider(ctx);
+    p.setGroupMode("severity");
+    const roots = p.getChildren();
+    const leaves = p.getChildren(roots[0]);
+    expect(p.getTreeItem(leaves[0]).description).toBe("a.yml:5");
+  });
+});
+
+describe("FindingsTreeProvider — activity-bar badge", () => {
+  // setTreeView wires the badge; refresh() and the diagnostic-change
+  // listener both drive updates. Tests pin down the contract that the
+  // badge tracks the visible-finding count and clears to undefined
+  // when the workspace is clean.
+
+  function fakeTreeView(): { badge: unknown } & object {
+    return { badge: undefined };
+  }
+
+  it("setTreeView seeds the badge with the current finding count", () => {
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "HIGH" },
+      { file: "a.yml", rule: "GHA-002", severity: "LOW" },
+    ]);
+    const p = new FindingsTreeProvider(ctx);
+    const view = fakeTreeView();
+    p.setTreeView(view as unknown as Parameters<typeof p.setTreeView>[0]);
+    expect((view.badge as { value: number }).value).toBe(2);
+  });
+
+  it("clears the badge to undefined when there are no findings", () => {
+    setStubDiagnostics([]);
+    const p = new FindingsTreeProvider(ctx);
+    const view = fakeTreeView();
+    p.setTreeView(view as unknown as Parameters<typeof p.setTreeView>[0]);
+    expect(view.badge).toBeUndefined();
+  });
+
+  it("singular/plural form of the badge tooltip", () => {
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "HIGH" },
+    ]);
+    const p = new FindingsTreeProvider(ctx);
+    const view = fakeTreeView();
+    p.setTreeView(view as unknown as Parameters<typeof p.setTreeView>[0]);
+    expect((view.badge as { tooltip: string }).tooltip).toBe(
+      "1 Pipeline-Check finding",
+    );
+
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "HIGH" },
+      { file: "a.yml", rule: "GHA-002", severity: "LOW" },
+    ]);
+    p.refresh();
+    expect((view.badge as { tooltip: string }).tooltip).toBe(
+      "2 Pipeline-Check findings",
+    );
+  });
+
+  it("refresh() before setTreeView is a no-op (does not throw)", () => {
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "HIGH" },
+    ]);
+    const p = new FindingsTreeProvider(ctx);
+    // No setTreeView call here — the pre-wiring window must be safe.
+    expect(() => p.refresh()).not.toThrow();
   });
 });
 
