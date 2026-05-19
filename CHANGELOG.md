@@ -11,14 +11,26 @@ versions follow [SemVer](https://semver.org/).
 > section **above** Unreleased, or remove the Unreleased block for the
 > release commit. Otherwise the GitHub release ships boilerplate.
 
-## [Unreleased]
+## [0.2.0] — 2026-05-19
 
-PRs landing on `main` between releases append entries here. The
-release commit collapses this section into `## [X.Y.Z] — <date>`.
+Closes 24 of 29 items from the 2026-05-19 in-depth UX/code review.
+Adds the activity-bar Findings tree's missing affordances (status bar,
+CodeLens, navigation, context menus, per-provider toggles), the
+release-tooling polish (`production` environment gate, pre-release
+channel, three-OS CI, integration tests), and the discovery /
+accessibility pass.
 
-The current run-up to v0.2.0 has the work below queued — landing
-order depends on which PRs in the [#11–#14 stack](https://github.com/greylag-ci/pipeline-check-vscode/pulls)
-merge first.
+**Heads-up for users with non-standard workflow paths:** the
+extension's `activationEvents` now match only the
+`workspaceContains:` patterns shared with the LSP `documentSelector`
+(plus `onStartupFinished` so the activity-bar slot is always
+visible). If your repo keeps CI definitions outside the standard
+locations (e.g. `pipelines/build.yml` instead of
+`.github/workflows/*.yml`), the extension still activates on
+`onStartupFinished`, but the LSP only scans files matching the
+document selector. Use `pipelineCheck.serverArgs` to point the LSP
+at a different path or symlink your custom config into a standard
+location.
 
 ### Added
 
@@ -99,8 +111,6 @@ merge first.
   "Refresh Findings". Existing "Go to Next Finding" and "Change
   Grouping" stay the same. Command IDs are unchanged — settings,
   keybindings, and automation continue to work.
-
-### Changed (release tooling)
 
 - **`@vscode/test-electron` integration suite** now runs in CI
   (Linux only, via `xvfb-run -a`). Five tests pin activation, the
