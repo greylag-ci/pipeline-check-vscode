@@ -132,6 +132,17 @@
         "category": "Pipeline-Check"
       },
       {
+        "command": "pipelineCheck.findings.openNonPreview",
+        "title": "Open Finding",
+        "category": "Pipeline-Check"
+      },
+      {
+        "command": "pipelineCheck.findings.filter",
+        "title": "Filter Findings",
+        "category": "Pipeline-Check",
+        "icon": "$(filter)"
+      },
+      {
         "command": "pipelineCheck.goToNextFinding",
         "title": "Go to Next Finding",
         "category": "Pipeline-Check"
@@ -162,9 +173,14 @@
           "group": "navigation@0"
         },
         {
-          "command": "pipelineCheck.findings.changeGrouping",
+          "command": "pipelineCheck.findings.filter",
           "when": "view == pipelineCheck.findings",
           "group": "navigation@1"
+        },
+        {
+          "command": "pipelineCheck.findings.changeGrouping",
+          "when": "view == pipelineCheck.findings",
+          "group": "navigation@2"
         },
         {
           "command": "pipelineCheck.findings.refresh",
@@ -173,6 +189,11 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "pipelineCheck.findings.openNonPreview",
+          "when": "view == pipelineCheck.findings && viewItem == pipelineCheck.finding",
+          "group": "navigation@0"
+        },
         {
           "command": "pipelineCheck.findings.openRuleDocs",
           "when": "view == pipelineCheck.findings && viewItem == pipelineCheck.finding",
@@ -199,6 +220,10 @@
         },
         {
           "command": "pipelineCheck.findings.openRuleDocs",
+          "when": "false"
+        },
+        {
+          "command": "pipelineCheck.findings.openNonPreview",
           "when": "false"
         }
       ]

@@ -85,6 +85,11 @@ const LANGUAGE_ID = "pipelineCheck";
 const LANGUAGE_NAME = "Pipeline-Check";
 const OUTPUT_CHANNEL = "Pipeline-Check";
 
+// `setStatusBarMessage` TTL for transient confirmations (clipboard
+// writes, etc.). Two seconds is long enough to be readable and short
+// enough that a stream of copies doesn't pile up.
+const CONFIRM_TTL_MS = 2000;
+
 // Structural shape of a Findings-tree leaf node, used by the
 // context-menu commands. The real LeafNode lives in findingsView.ts;
 // duplicating just the fields the commands read keeps extension.ts
@@ -93,6 +98,8 @@ type LeafLike = {
   readonly finding?: {
     readonly ruleId?: string;
     readonly docsUrl?: string;
+    readonly uri?: vscode.Uri;
+    readonly diagnostic?: { readonly range?: vscode.Range };
   };
 };
 
@@ -210,8 +217,9 @@ async function startClient(): Promise<void> {
           await vscode.env.clipboard.writeText(
             'pip install "pipeline-check[lsp]"',
           );
-          void vscode.window.showInformationMessage(
+          vscode.window.setStatusBarMessage(
             'Copied: pip install "pipeline-check[lsp]"',
+            CONFIRM_TTL_MS,
           );
         } else if (choice === "Open server log") {
           outputChannel.show();
@@ -318,7 +326,10 @@ export async function activate(
           return;
         }
         await vscode.env.clipboard.writeText(id);
-        void vscode.window.showInformationMessage(`Copied ${id} to clipboard.`);
+        // Status-bar message instead of a modal toast — the copy
+        // succeeded silently 95% of the time anyway; this is a
+        // ~2-second confirmation that doesn't steal focus.
+        vscode.window.setStatusBarMessage(`Copied ${id}`, CONFIRM_TTL_MS);
       },
     ),
     vscode.commands.registerCommand(
@@ -334,6 +345,45 @@ export async function activate(
         await vscode.env.openExternal(vscode.Uri.parse(url));
       },
     ),
+    // Open a finding without using the editor's preview-tab slot.
+    // Same target as the default click-to-reveal, but `preview: false`
+    // pins each opened file as a permanent tab — useful when the user
+    // is opening several findings side-by-side. Lives only in the
+    // leaf context menu; the single-click path stays preview-style so
+    // the common "click through findings to triage" flow doesn't
+    // create tab clutter.
+    vscode.commands.registerCommand(
+      "pipelineCheck.findings.openNonPreview",
+      async (node: LeafLike | undefined) => {
+        const uri = node?.finding?.uri;
+        const range = node?.finding?.diagnostic?.range;
+        if (!uri) return;
+        await vscode.commands.executeCommand("vscode.open", uri, {
+          selection: range,
+          preserveFocus: false,
+          preview: false,
+        });
+      },
+    ),
+    // Filter the Findings tree by a substring. Matches against rule
+    // ID, message body, and fsPath case-insensitively. Re-invoking
+    // the command pre-fills the current filter so users can edit or
+    // clear it (empty string clears).
+    vscode.commands.registerCommand(
+      "pipelineCheck.findings.filter",
+      async () => {
+        const current = findingsProvider.getFilter();
+        const next = await vscode.window.showInputBox({
+          title: "Filter Pipeline-Check findings",
+          prompt:
+            "Match rule ID, message text, or file path. Empty to clear.",
+          value: current,
+          placeHolder: "e.g. GHA-001 or release.yml",
+        });
+        if (next === undefined) return; // user cancelled
+        findingsProvider.setFilter(next);
+      },
+    ),
     // Copy-install-command also lives in the welcome-state and is
     // promoted to a top-level command so users can re-find it after
     // dismissing the first-run notification.
@@ -343,8 +393,9 @@ export async function activate(
         await vscode.env.clipboard.writeText(
           'pip install "pipeline-check[lsp]"',
         );
-        void vscode.window.showInformationMessage(
+        vscode.window.setStatusBarMessage(
           'Copied: pip install "pipeline-check[lsp]"',
+          CONFIRM_TTL_MS,
         );
       },
     ),
