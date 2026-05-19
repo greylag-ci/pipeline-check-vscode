@@ -34,6 +34,7 @@ suite("Pipeline-Check — activation", () => {
       "pipelineCheck.restart",
       "pipelineCheck.showLog",
       "pipelineCheck.copyInstallCommand",
+      "pipelineCheck.scanWorkspace",
       "pipelineCheck.findings.refresh",
       "pipelineCheck.findings.changeGrouping",
       "pipelineCheck.findings.copyRuleId",

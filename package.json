@@ -85,7 +85,7 @@
     "viewsWelcome": [
       {
         "view": "pipelineCheck.findings",
-        "contents": "Pipeline-Check scans CI/CD configurations against OWASP Top 10 CI/CD risks and 14 other compliance frameworks.\n\nRequires Python + `pipeline-check[lsp]` on PATH.\n[Copy install command](command:pipelineCheck.copyInstallCommand)\n\nOpen a workflow, Dockerfile, or other supported config and findings will appear here.\n\nPress `Alt+F8` (or `Shift+Alt+F8`) to step through findings in the editor.\n\n---\n\nNot seeing expected findings?\n[Restart Language Server](command:pipelineCheck.restart) · [Open Log](command:pipelineCheck.showLog)"
+        "contents": "Pipeline-Check scans CI/CD configurations against OWASP Top 10 CI/CD risks and 14 other compliance frameworks.\n\nRequires Python + `pipeline-check[lsp]` on PATH.\n[Copy install command](command:pipelineCheck.copyInstallCommand)\n\n[Scan workspace](command:pipelineCheck.scanWorkspace) to populate this panel without opening every file by hand. Otherwise findings show up as you open supported configs.\n\nPress `Alt+F8` (or `Shift+Alt+F8`) to step through findings in the editor.\n\n---\n\nNot seeing expected findings?\n[Restart Language Server](command:pipelineCheck.restart) · [Open Log](command:pipelineCheck.showLog)"
       }
     ],
     "commands": [
@@ -103,6 +103,12 @@
         "command": "pipelineCheck.copyInstallCommand",
         "title": "Copy LSP Install Command",
         "category": "Pipeline-Check"
+      },
+      {
+        "command": "pipelineCheck.scanWorkspace",
+        "title": "Scan Workspace",
+        "category": "Pipeline-Check",
+        "icon": "$(play)"
       },
       {
         "command": "pipelineCheck.findings.refresh",
@@ -151,6 +157,11 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "pipelineCheck.scanWorkspace",
+          "when": "view == pipelineCheck.findings",
+          "group": "navigation@0"
+        },
         {
           "command": "pipelineCheck.findings.changeGrouping",
           "when": "view == pipelineCheck.findings",
