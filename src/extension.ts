@@ -105,6 +105,35 @@ type LeafLike = {
 
 let client: LanguageClient | undefined;
 
+// Drives the `when` clauses on the two `viewsWelcome` entries: an
+// install-prompt panel before the LSP comes up, a "Scan workspace"
+// panel once it is connected. Defaults to false on registration, so
+// the install panel is what users see on the very first activation
+// before startClient runs.
+const LSP_READY_CONTEXT_KEY = "pipelineCheck.lspReady";
+
+function setLspReady(ready: boolean): void {
+  void vscode.commands.executeCommand(
+    "setContext",
+    LSP_READY_CONTEXT_KEY,
+    ready,
+  );
+}
+
+const PIP_INSTALL_COMMAND = 'pip install "pipeline-check[lsp]"';
+
+// Opens a new integrated terminal and types the pip install command
+// without pressing Enter. The user reviews the command (and, when
+// needed, activates their conda env / venv first) before running it.
+// Auto-running here would install into whatever Python the shell's
+// default `pip` points at — usually wrong when the user has a project
+// venv they haven't activated yet.
+function installInTerminal(): void {
+  const terminal = vscode.window.createTerminal("Pipeline-Check install");
+  terminal.show();
+  terminal.sendText(PIP_INSTALL_COMMAND, false);
+}
+
 function buildClient(): LanguageClient {
   const config = vscode.workspace.getConfiguration("pipelineCheck");
   const command = config.get<string>("serverCommand", "python");
@@ -190,6 +219,7 @@ async function startClient(): Promise<void> {
     clientLog.info("language server: starting");
     await client.start();
     clientLog.info("language server: started");
+    setLspReady(true);
   } catch (err) {
     // The most common cause is `python -m pipeline_check.lsp` failing:
     // either Python is not on PATH or the [lsp] extra is not installed.
@@ -209,18 +239,12 @@ async function startClient(): Promise<void> {
     void vscode.window
       .showErrorMessage(
         `Language server failed to start (${message}).`,
-        "Copy install command",
+        "Install in terminal",
         "Open server log",
       )
-      .then(async (choice) => {
-        if (choice === "Copy install command") {
-          await vscode.env.clipboard.writeText(
-            'pip install "pipeline-check[lsp]"',
-          );
-          vscode.window.setStatusBarMessage(
-            'Copied: pip install "pipeline-check[lsp]"',
-            CONFIRM_TTL_MS,
-          );
+      .then((choice) => {
+        if (choice === "Install in terminal") {
+          installInTerminal();
         } else if (choice === "Open server log") {
           outputChannel.show();
         }
@@ -228,6 +252,7 @@ async function startClient(): Promise<void> {
     // Drop the broken client so a subsequent restart starts fresh
     // rather than trying to recover from a half-initialised state.
     client = undefined;
+    setLspReady(false);
   }
 }
 
@@ -243,6 +268,7 @@ async function stopClient(): Promise<void> {
   }
   const local = client;
   client = undefined;
+  setLspReady(false);
   let timer: NodeJS.Timeout | undefined;
   try {
     await Promise.race([
@@ -268,6 +294,11 @@ export async function activate(
   // wire it up before starting the client. That way, if the server
   // takes a moment to come up (or fails outright), the panel is still
   // visible and surfaces findings the moment the first publish lands.
+  // Seed the welcome-panel context key before any UI renders so the
+  // install-prompt is what shows up on the very first frame; flipped
+  // to true by startClient on a successful connection.
+  setLspReady(false);
+
   const findingsProvider = new FindingsTreeProvider(context);
   const findingsView = vscode.window.createTreeView("pipelineCheck.findings", {
     treeDataProvider: findingsProvider,
@@ -384,17 +415,21 @@ export async function activate(
         findingsProvider.setFilter(next);
       },
     ),
-    // Copy-install-command also lives in the welcome-state and is
-    // promoted to a top-level command so users can re-find it after
-    // dismissing the first-run notification.
+    // Install commands. installInTerminal is the primary CTA from the
+    // welcome panel — it opens a terminal with the pip command typed
+    // but not executed, so the user reviews / activates their venv
+    // first. copyInstallCommand stays registered as a fallback for
+    // users in headless / non-terminal flows.
+    vscode.commands.registerCommand(
+      "pipelineCheck.installInTerminal",
+      () => installInTerminal(),
+    ),
     vscode.commands.registerCommand(
       "pipelineCheck.copyInstallCommand",
       async () => {
-        await vscode.env.clipboard.writeText(
-          'pip install "pipeline-check[lsp]"',
-        );
+        await vscode.env.clipboard.writeText(PIP_INSTALL_COMMAND);
         vscode.window.setStatusBarMessage(
-          'Copied: pip install "pipeline-check[lsp]"',
+          `Copied: ${PIP_INSTALL_COMMAND}`,
           CONFIRM_TTL_MS,
         );
       },

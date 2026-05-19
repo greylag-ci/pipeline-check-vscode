@@ -84,7 +84,13 @@
     "viewsWelcome": [
       {
         "view": "pipelineCheck.findings",
-        "contents": "Pipeline-Check scans CI/CD configurations against OWASP Top 10 CI/CD risks and 14 other compliance frameworks.\n\nRequires Python + `pipeline-check[lsp]` on PATH.\n[Copy install command](command:pipelineCheck.copyInstallCommand)\n\n[Scan workspace](command:pipelineCheck.scanWorkspace) to populate this panel without opening every file by hand. Otherwise findings show up as you open supported configs.\n\nPress `Alt+F8` (or `Shift+Alt+F8`) to step through findings in the editor.\n\n---\n\nNot seeing expected findings?\n[Restart Language Server](command:pipelineCheck.restart) · [Open Log](command:pipelineCheck.showLog)"
+        "when": "pipelineCheck.lspReady",
+        "contents": "Pipeline-Check lints CI/CD configs against OWASP Top 10 CI/CD risks and 14 compliance frameworks. 810+ rules.\n\n[Scan workspace](command:pipelineCheck.scanWorkspace)\n\nFindings also appear automatically as you open `.github/workflows/*.yml`, `.gitlab-ci.yml`, `Dockerfile`, and other supported configs.\n\nNavigate findings with `Alt+F8` / `Shift+Alt+F8`."
+      },
+      {
+        "view": "pipelineCheck.findings",
+        "when": "!pipelineCheck.lspReady",
+        "contents": "Pipeline-Check lints CI/CD configs against OWASP Top 10 CI/CD risks and 14 compliance frameworks. 810+ rules.\n\nIt needs a Python helper — `pipeline-check[lsp]` from PyPI — running locally.\n\n[Install in terminal](command:pipelineCheck.installInTerminal)\n[Retry connection](command:pipelineCheck.restart)\n\nAlready installed but still seeing this? [Open server log](command:pipelineCheck.showLog)."
       }
     ],
     "commands": [
@@ -101,6 +107,11 @@
       {
         "command": "pipelineCheck.copyInstallCommand",
         "title": "Copy LSP Install Command",
+        "category": "Pipeline-Check"
+      },
+      {
+        "command": "pipelineCheck.installInTerminal",
+        "title": "Install LSP Server in Terminal",
         "category": "Pipeline-Check"
       },
       {
