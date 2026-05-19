@@ -488,3 +488,119 @@ describe("FindingsTreeProvider — findings cache invalidation", () => {
     expect(roots[0].kind === "group" && roots[0].label).toBe("CRITICAL");
   });
 });
+
+describe("FindingsTreeProvider — filter", () => {
+  // The filter narrows the visible tree to findings whose rule ID,
+  // message, or fsPath contains the filter string (case-insensitive).
+  // The badge tracks the filtered count; `lastFindingUris` keeps the
+  // full set so the batch-touches-us check still wakes us up for
+  // publishes that would currently be filtered out (otherwise a
+  // CLEAR of a filtered-out URI would never refresh).
+
+  function fakeTreeView(): { badge: unknown } & object {
+    return { badge: undefined };
+  }
+
+  it("defaults to no filter (getFilter returns empty string)", () => {
+    const p = new FindingsTreeProvider(ctx);
+    expect(p.getFilter()).toBe("");
+  });
+
+  it("setFilter narrows the tree to matching rule IDs", () => {
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "HIGH" },
+      { file: "b.yml", rule: "GHA-015", severity: "HIGH" },
+      { file: "c.yml", rule: "GLI-002", severity: "HIGH" },
+    ]);
+    const p = new FindingsTreeProvider(ctx);
+    p.setGroupMode("severity");
+    expect(p.getChildren()[0]).toMatchObject({ kind: "group" });
+    expect((p.getChildren()[0] as unknown as { children: unknown[] }).children).toHaveLength(
+      3,
+    );
+
+    p.setFilter("GHA");
+    const after = p.getChildren()[0] as unknown as { children: unknown[] };
+    expect(after.children).toHaveLength(2);
+  });
+
+  it("filter is case-insensitive", () => {
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "HIGH" },
+    ]);
+    const p = new FindingsTreeProvider(ctx);
+    p.setGroupMode("severity");
+    p.setFilter("gha");
+    const roots = p.getChildren();
+    expect(roots).toHaveLength(1);
+  });
+
+  it("filter matches the message body, not just the rule ID", () => {
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "HIGH" },
+      { file: "b.yml", rule: "GHA-002", severity: "HIGH" },
+    ]);
+    // Both findings have message "GHA-001 title" / "GHA-002 title"
+    // because setStubDiagnostics builds the message from the rule.
+    // Filtering on "title" should keep both.
+    const p = new FindingsTreeProvider(ctx);
+    p.setGroupMode("severity");
+    p.setFilter("title");
+    const roots = p.getChildren();
+    expect((roots[0] as unknown as { children: unknown[] }).children).toHaveLength(2);
+  });
+
+  it("filter matches the fsPath", () => {
+    setStubDiagnostics([
+      { file: "workflows/ci.yml", rule: "GHA-001", severity: "HIGH" },
+      { file: "config/dockerfile", rule: "DOCK-001", severity: "HIGH" },
+    ]);
+    const p = new FindingsTreeProvider(ctx);
+    p.setGroupMode("severity");
+    p.setFilter("workflows");
+    expect((p.getChildren()[0] as unknown as { children: unknown[] }).children).toHaveLength(
+      1,
+    );
+  });
+
+  it("empty filter clears the narrowing", () => {
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "HIGH" },
+      { file: "b.yml", rule: "GLI-002", severity: "HIGH" },
+    ]);
+    const p = new FindingsTreeProvider(ctx);
+    p.setGroupMode("severity");
+    p.setFilter("GHA");
+    expect((p.getChildren()[0] as unknown as { children: unknown[] }).children).toHaveLength(
+      1,
+    );
+    p.setFilter("");
+    expect((p.getChildren()[0] as unknown as { children: unknown[] }).children).toHaveLength(
+      2,
+    );
+  });
+
+  it("setFilter trims whitespace before comparing for change", () => {
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "HIGH" },
+    ]);
+    const p = new FindingsTreeProvider(ctx);
+    p.setFilter("  GHA  ");
+    expect(p.getFilter()).toBe("GHA");
+  });
+
+  it("badge reflects the filtered count, not the workspace total", () => {
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "HIGH" },
+      { file: "b.yml", rule: "GLI-002", severity: "HIGH" },
+      { file: "c.yml", rule: "GHA-003", severity: "HIGH" },
+    ]);
+    const p = new FindingsTreeProvider(ctx);
+    const view = fakeTreeView();
+    p.setTreeView(view as unknown as Parameters<typeof p.setTreeView>[0]);
+    expect((view.badge as { value: number }).value).toBe(3);
+
+    p.setFilter("GHA");
+    expect((view.badge as { value: number }).value).toBe(2);
+  });
+});

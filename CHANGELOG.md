@@ -15,6 +15,19 @@ versions follow [SemVer](https://semver.org/).
 
 ### Added
 
+- **`Pipeline-Check: Filter Findings` command.** Opens an InputBox;
+  matches against rule ID, message body, and file path
+  (case-insensitive substring). Re-invoking the command pre-fills
+  the current filter so users can edit or clear (empty input
+  clears). New `$(filter)` button on the Findings view title bar.
+  The badge updates to reflect the filtered count; the
+  `lastFindingUris` set still tracks the unfiltered universe so a
+  publish for a currently-hidden finding still wakes the tree up.
+- **`Pipeline-Check: Open Finding` context-menu entry** on Findings
+  tree leaves. Opens the finding as a **permanent (non-preview)**
+  tab — useful when triaging multiple findings side-by-side. The
+  default click-to-reveal still uses preview-style so the common
+  "click through to scan" flow doesn't create tab clutter.
 - **Status bar background colour reflects severity.** A workspace with
   any CRITICAL finding tints the bar to `statusBarItem.errorBackground`
   (red in the default themes); a workspace with HIGH but no CRITICAL
@@ -41,6 +54,11 @@ versions follow [SemVer](https://semver.org/).
 
 ### Changed
 
+- **Quieter clipboard confirmations.** Copy Rule ID and Copy LSP
+  Install Command now write a 2-second status-bar message instead of
+  firing a modal information toast. The copy still succeeded
+  silently 95% of the time anyway; this confirms the action without
+  stealing focus.
 - **"Refresh Findings" now triggers a real scan** instead of just
   re-painting the tree from already-published diagnostics. Matches
   the user's mental model: clicking a refresh icon should fetch new

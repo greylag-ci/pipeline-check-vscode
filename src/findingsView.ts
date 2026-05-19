@@ -117,6 +117,10 @@ export class FindingsTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   // onDidChangeDiagnostics batch with no remaining pipeline-check
   // diagnostic, we still need to refresh so the stale leaf vanishes.
   private lastFindingUris = new Set<string>();
+  // Case-insensitive substring; matches against ruleId, message, and
+  // fsPath. Empty string disables filtering. Stored verbatim (with
+  // original case) for echo in the InputBox; matched lowercased.
+  private filter = "";
 
   constructor(context: vscode.ExtensionContext) {
     // VS Code does not expose a per-source filter on the diagnostic-
@@ -152,6 +156,25 @@ export class FindingsTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     return this.groupMode;
   }
 
+  getFilter(): string {
+    return this.filter;
+  }
+
+  setFilter(value: string): void {
+    const trimmed = value.trim();
+    if (trimmed === this.filter) return;
+    this.filter = trimmed;
+    // Context key lets the manifest's `when` clauses paint a
+    // "filter active" affordance — e.g. swap the title-bar filter
+    // icon for a filled variant when the filter has content.
+    void vscode.commands.executeCommand(
+      "setContext",
+      "pipelineCheck.filterActive",
+      trimmed.length > 0,
+    );
+    this.refresh();
+  }
+
   setGroupMode(mode: GroupMode): void {
     if (this.groupMode === mode) {
       return;
@@ -177,15 +200,32 @@ export class FindingsTreeProvider implements vscode.TreeDataProvider<TreeNode> {
    * findings. Walks the workspace diagnostic store once per refresh
    * instead of once per consumer, and rebuilds the "URIs we had
    * findings for" set so the next batch-skip check has fresh data.
+   *
+   * When a filter string is active, the returned list is restricted
+   * to findings whose rule ID, message, or fsPath contains the
+   * filter (case-insensitive). `lastFindingUris` still tracks the
+   * *full* set so the batch-touches-us check stays correct — a
+   * publish for a URI whose finding is currently filtered out
+   * should still wake us up.
    */
   private findings(): Finding[] {
     if (this.cachedFindings === null) {
-      this.cachedFindings = collectFindings();
-      this.lastFindingUris = new Set(
-        this.cachedFindings.map((f) => f.uri.toString()),
-      );
+      const all = collectFindings();
+      this.lastFindingUris = new Set(all.map((f) => f.uri.toString()));
+      this.cachedFindings = this.applyFilter(all);
     }
     return this.cachedFindings;
+  }
+
+  private applyFilter(findings: readonly Finding[]): Finding[] {
+    if (!this.filter) return [...findings];
+    const needle = this.filter.toLowerCase();
+    return findings.filter((f) => {
+      if (f.ruleId.toLowerCase().includes(needle)) return true;
+      if (f.diagnostic.message.toLowerCase().includes(needle)) return true;
+      if (f.uri.fsPath.toLowerCase().includes(needle)) return true;
+      return false;
+    });
   }
 
   /**

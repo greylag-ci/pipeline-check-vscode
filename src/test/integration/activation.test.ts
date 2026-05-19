@@ -37,8 +37,10 @@ suite("Pipeline-Check — activation", () => {
       "pipelineCheck.scanWorkspace",
       "pipelineCheck.findings.refresh",
       "pipelineCheck.findings.changeGrouping",
+      "pipelineCheck.findings.filter",
       "pipelineCheck.findings.copyRuleId",
       "pipelineCheck.findings.openRuleDocs",
+      "pipelineCheck.findings.openNonPreview",
       "pipelineCheck.goToNextFinding",
       "pipelineCheck.goToPreviousFinding",
     ];
