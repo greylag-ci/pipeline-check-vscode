@@ -5,30 +5,12 @@ vi.mock("vscode", async () => {
   return vscodeStub();
 });
 
-import { TRIGGER_PATTERNS } from "./providers";
-import { buildScanGlob, formatSummary } from "./workspaceScan";
+import { formatSummary } from "./workspaceScan";
 
 // Pure-logic surface of workspaceScan.ts. The async scan itself is
 // hard to unit-test without the VS Code host (findFiles + progress +
-// openTextDocument), but everything below covers the bits where a
-// regression would silently change behaviour: the buildScanGlob shape
-// and the user-facing summary copy. The pattern list itself is
-// asserted in providers.test.ts (single source of truth) so we don't
-// re-verify it here.
-
-describe("buildScanGlob", () => {
-  it("wraps the patterns in a single brace-glob VS Code accepts", () => {
-    expect(buildScanGlob(["**/a", "**/b"])).toBe("{**/a,**/b}");
-  });
-
-  it("defaults to TRIGGER_PATTERNS when no argument is passed", () => {
-    expect(buildScanGlob()).toBe(`{${TRIGGER_PATTERNS.join(",")}}`);
-  });
-
-  it("handles a single pattern without dangling commas", () => {
-    expect(buildScanGlob(["**/x"])).toBe("{**/x}");
-  });
-});
+// openTextDocument). Integration coverage of the file-discovery path
+// lives in src/test/integration/activation.test.ts.
 
 describe("formatSummary", () => {
   it("clean run: 'scanned N files'", () => {

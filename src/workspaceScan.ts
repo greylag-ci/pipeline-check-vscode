@@ -20,11 +20,32 @@ import { TRIGGER_PATTERNS } from "./providers";
 const EXCLUDE_GLOB =
   "**/{node_modules,.git,dist,out,target,build,.venv,venv,.tox,.cache}/**";
 
-/** Combine the candidate patterns into a single brace-glob VS Code accepts. */
-export function buildScanGlob(
-  patterns: readonly string[] = TRIGGER_PATTERNS,
-): string {
-  return `{${patterns.join(",")}}`;
+// Run `findFiles` once per pattern and union the results. VS Code's glob
+// parser does not reliably handle nested brace alternations, so a single
+// combined glob like `{**/.github/workflows/*.{yml,yaml},**/.gitlab-ci.yml,…}`
+// silently matches nothing — the symptom reported as "no scannable files
+// found" even when workflows are present. One findFiles per pattern keeps
+// each glob shallow (at most one brace level for `.{yml,yaml}`) and the
+// result is deduped on the URI string.
+async function findScannableFiles(
+  patterns: readonly string[],
+  exclude: string,
+): Promise<vscode.Uri[]> {
+  const seen = new Set<string>();
+  const out: vscode.Uri[] = [];
+  const batches = await Promise.all(
+    patterns.map((p) => vscode.workspace.findFiles(p, exclude)),
+  );
+  for (const batch of batches) {
+    for (const uri of batch) {
+      const key = uri.toString();
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(uri);
+      }
+    }
+  }
+  return out;
 }
 
 export interface ScanResult {
@@ -67,7 +88,7 @@ export async function scanWorkspace(
     return { scanned: 0, failed: 0, cancelled: false };
   }
 
-  const uris = await vscode.workspace.findFiles(buildScanGlob(), EXCLUDE_GLOB);
+  const uris = await findScannableFiles(TRIGGER_PATTERNS, EXCLUDE_GLOB);
 
   if (uris.length === 0) {
     if (!quiet) {
