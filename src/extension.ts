@@ -19,32 +19,11 @@ import {
   TransportKind,
 } from "vscode-languageclient/node";
 import { FindingsTreeProvider, GroupMode } from "./findingsView";
+import { filterByThreshold } from "./severityFilter";
 
 const LANGUAGE_ID = "pipelineCheck";
 const LANGUAGE_NAME = "Pipeline-Check";
 const OUTPUT_CHANNEL = "Pipeline-Check";
-
-// Upstream severity ranks. Higher = more severe. The server stuffs the
-// pipeline-check severity name into Diagnostic.data["severity"] (e.g.
-// "CRITICAL"). The LSP DiagnosticSeverity enum collapses CRITICAL + HIGH
-// into a single Error value, so we can't filter precisely on
-// vscode.Diagnostic.severity alone.
-const SEVERITY_RANK: Record<string, number> = {
-  INFO: 0,
-  LOW: 1,
-  MEDIUM: 2,
-  HIGH: 3,
-  CRITICAL: 4,
-};
-
-// Threshold knob values. Map each to the rank a diagnostic must
-// reach to survive the filter.
-const THRESHOLD_RANK: Record<string, number> = {
-  low: SEVERITY_RANK.LOW,
-  medium: SEVERITY_RANK.MEDIUM,
-  high: SEVERITY_RANK.HIGH,
-  critical: SEVERITY_RANK.CRITICAL,
-};
 
 let client: LanguageClient | undefined;
 
@@ -98,23 +77,7 @@ function buildClient(): LanguageClient {
         const threshold = vscode.workspace
           .getConfiguration("pipelineCheck")
           .get<string>("severityThreshold", "low");
-        // VS Code constrains the setting to the enum in package.json, so
-        // the lookup should always hit. The `?? LOW` is defense-in-depth
-        // against a hand-edited settings.json with a bogus value: a
-        // diagnostic must clear the LOW bar, never silently disappear.
-        const minRank = THRESHOLD_RANK[threshold] ?? SEVERITY_RANK.LOW;
-        const filtered = diagnostics.filter((diag) => {
-          const data = (diag as vscode.Diagnostic & {
-            data?: { severity?: string };
-          }).data;
-          const name = data?.severity;
-          if (!name) {
-            return true;
-          }
-          const rank = SEVERITY_RANK[name];
-          return rank === undefined || rank >= minRank;
-        });
-        next(uri, filtered);
+        next(uri, filterByThreshold(diagnostics, threshold));
       },
     },
   };

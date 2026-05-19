@@ -45,6 +45,16 @@ commit collapses this section into `## [X.Y.Z] — <date>`.
   Reporting as the disclosure channel, response SLAs, and a published
   threat model.
 
+### Tests
+
+- **Vitest unit suite added.** 25 tests covering the severity threshold
+  filter (extracted into [src/severityFilter.ts](src/severityFilter.ts))
+  and the Findings tree's pure logic (collection from
+  diagnostics, group-by-severity / file / rule, severity normalisation,
+  no-refresh-storm contract). `npm test` runs the suite; both ci.yml
+  and publish.yml gate on it. Test files live next to the code they
+  cover and are stripped from the .vsix.
+
 ### Fixed
 
 - **The published `.vsix` was missing its runtime dependency.** The

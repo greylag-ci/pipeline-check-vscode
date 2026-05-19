@@ -211,6 +211,45 @@ A tag created on an arbitrary commit or a force-moved tag would still ship.
 
 ---
 
+## Tests
+
+A vitest unit suite covers the pure-logic seams that user-facing
+correctness depends on. The infrastructure (vitest, `vi.mock("vscode",
+...)` for code that touches the editor namespace) is reusable — extend
+it as more pure-logic modules are extracted.
+
+- [x] **Severity threshold filter** ([src/severityFilter.test.ts](src/severityFilter.test.ts))
+      — 14 tests pinning down the invariants: missing/unknown severity
+      is never silently dropped, an unknown threshold name falls back
+      to LOW, CRITICAL survives every concrete threshold, INFO never
+      does, order is preserved, no in-place mutation. The filter
+      itself was extracted from [src/extension.ts](src/extension.ts)
+      into [src/severityFilter.ts](src/severityFilter.ts) so the test
+      didn't need a vscode mock.
+- [x] **Findings tree** ([src/findingsView.test.ts](src/findingsView.test.ts))
+      — 11 tests covering source filtering (only `pipeline-check`
+      diagnostics appear), the three group modes (`severity`, `file`,
+      `rule`) with bucket ordering + counts + leaf labels +
+      `vscode.open` reveal command, severity normalisation (lowercase
+      → uppercase, unknown → INFO fallback), and the
+      no-refresh-storm contract on a same-mode `setGroupMode` call.
+      Uses `vi.mock("vscode", ...)` to stub the editor namespace.
+- [ ] **VS Code integration tests** with `@vscode/test-electron` once
+      the surface stabilises. Useful for: real diagnostic publishing
+      end-to-end, the tree view actually rendering in a VS Code host,
+      and the workspace-trust prompt path. Held back because the
+      payoff per test is high but the marginal cost of each test is
+      also high (boot a real Electron + extension host), so the unit
+      suite earns its keep first.
+
+`npm test` runs the suite (configured in
+[vitest.config.ts](vitest.config.ts)); both ci.yml and publish.yml run
+it as a gating step. Test files live next to the code they cover and
+are stripped from the .vsix by `src/**` and `**/*.ts` in
+[.vscodeignore](.vscodeignore).
+
+---
+
 ## Low — polish
 
 - [x] **L1** Recommend an absolute path for `serverCommand` in its
@@ -231,3 +270,114 @@ A tag created on an arbitrary commit or a force-moved tag would still ship.
       repo (Settings → General → Features), otherwise the link 404s.
       Skipped `bugs.email` — without a real disclosure address, a
       placeholder is worse than the existing GitHub-issues URL.
+
+---
+
+## Panel UX — Findings tree design-review follow-ups
+
+Captured from a frontend-design review of the Findings tree
+panel ([src/findingsView.ts](src/findingsView.ts),
+[media/pipeline-check.svg](media/pipeline-check.svg), and the
+`viewsContainers` / `views` / `viewsWelcome` / `menus` blocks in
+[package.json](package.json)). Items **U1 – U8** land in this
+branch; **U9 – U11** are scoped as follow-ups so the surface
+changes (commands, menu structure, view header) can be reviewed
+on their own.
+
+### Shipping with this branch
+
+- [x] **U1** Replace the activity-bar SVG. Every CI security
+      product (Snyk, Trivy, Checkov, GitGuardian, Bridgecrew, Wiz)
+      ships a shield-with-checkmark; ours added an eighth shield to
+      an activity bar that also carries the source-control fork and
+      every git extension's variation on the same. Swapped for an
+      inverted-Y pipeline glyph (top node solid, bottom-right node
+      solid, bottom-left hollow) — speaks to *pipeline + uneven
+      posture* in one glance and is uncrowded in the activity-bar
+      neighbourhood.
+- [x] **U2** Set a count badge on the TreeView. The panel-purpose
+      comment in [src/findingsView.ts](src/findingsView.ts#L1-L8)
+      claims "how many CRITICAL findings does this workspace have
+      right now?" as the question it answers, but the only way to
+      get the count was to expand every group and count rows.
+      Wired `treeView.badge` to the live total so the activity-bar
+      icon carries the number when the panel is collapsed.
+- [x] **U3** Rewrite the empty-state copy. The previous copy led
+      with "No findings in open files" and offered Restart / Show
+      log as primary actions — denial-first framing pointing at
+      dev-tools. Replaced with a one-sentence value proposition
+      ("Pipeline-Check scans CI/CD configurations for OWASP Top 10
+      CI/CD risks…") and demoted the diagnostic links to a
+      "Not seeing findings?" secondary line.
+- [x] **U4** Restructure leaf rows. Previously: label was
+      `GHA-001: <title>`, description was the full
+      workspace-relative path. The rule-ID prefix ate 7–8
+      characters of every label; the path duplicated the parent
+      group's information in file-mode and got middle-truncated
+      everywhere else (`…templates/depl…`). And the line number —
+      the one piece of "where" information the user actually needs
+      — was nowhere to be seen. Now: label = title only;
+      description carries `RULE · file.yml:LINE` (or the relevant
+      subset for the current grouping). Matches the
+      `path:line` form compilers emit, halves label width for the
+      same information.
+- [x] **U5** Differentiate severity icons. Previously
+      CRITICAL and HIGH shared `error`+`errorForeground` (same red
+      icon, same red colour) — defensible for editor-gutter
+      consistency but indistinguishable in the severity-grouped
+      tree. Now CRITICAL renders as `flame` (still red), HIGH stays
+      `error`. Separately: INFO used `circle-small-filled` (a 6px
+      glyph in a 16px slot, breaking the left-edge alignment) with
+      no themed colour (defaulting to foreground — *brighter* than
+      LOW's blue, inverting the severity gradient). Now uses
+      `circle-outline` themed to `descriptionForeground` so INFO is
+      visibly the quietest row.
+- [x] **U6** Aggregate rule-group severity by max, not first.
+      [src/findingsView.ts:301](src/findingsView.ts#L301) was picking
+      `items[0].severity` after a sort that ordered by file path
+      then line number — totally unrelated to severity. A rule
+      with one CRITICAL + four LOW findings rendered blue. Fixed
+      to pick the maximum severity across the bucket.
+- [x] **U7** Drop the tooltip `---` substitution and the dead
+      leaf `getChildren` branch. The horizontal rule between
+      paragraphs created three visually-separate cards in the
+      tooltip — noisier than markdown's blank-line rhythm. The
+      leaf `getChildren` is unreachable because leaves are
+      constructed with `CollapsibleState.None`.
+- [x] **U8** Compress command titles. "Refresh findings" →
+      "Refresh"; "Group findings by …" → "Group by …". The `category`
+      field already prefixes "Pipeline-Check: " in the command
+      palette, so the shorter form remains unambiguous globally
+      and fits the title-bar tooltip without truncation.
+
+### Follow-ups (not in this branch)
+
+- [ ] **U9** Replace the three group-mode title-bar buttons with
+      a single button that opens a Quick Pick. The current
+      "hide the active mode" radio pattern uses elimination as a
+      state indicator — a first-time user sees two of three modes
+      and can't tell which is active or that there's a third. No
+      other VS Code extension uses this pattern; Problems panel
+      uses a filter popup, GitLens uses a Quick Pick. Patch
+      changes the command surface ( drops three groupBy commands,
+      adds one `findings.changeGrouping` command and a private
+      Quick Pick prompt), so it lands separately for a cleaner
+      diff.
+- [ ] **U10** Collapse the inner sub-view header band. The
+      activity-bar slot says "PIPELINE-CHECK" and the only sub-view
+      inside says "FINDINGS" — two header bars eating ~50px before
+      the first row. If the slot only ever holds this one tree,
+      VS Code lets us elide the inner header by leaving
+      `views[].name` empty (Source Control does this). Trial in a
+      follow-up because empty `name` triggers some title-fallback
+      surprises in older VS Code engines.
+- [ ] **U11** Standardise group node descriptions to count-only.
+      Severity groups show `"5"`, file groups show `"5 · workflows"`,
+      rule groups show `"5"`. Move parent-dir into the tooltip and
+      land on `"5"` everywhere — a column of identical-shape
+      descriptions scans faster than mixed shapes. Held because
+      the file-grouping description is the only signal that
+      currently distinguishes two same-named files in different
+      directories (`workflows/release.yml` vs
+      `pipelines/release.yml`) and we'd need to add a tooltip
+      before we can drop the inline parent-dir hint.

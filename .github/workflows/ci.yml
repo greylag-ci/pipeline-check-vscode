@@ -34,6 +34,9 @@ jobs:
       - name: TypeScript compile
         run: npm run compile
 
+      - name: Unit tests
+        run: npm test
+
       - name: Bundle smoke
         # Catches the "vsix packages but won't load" failure mode — a
         # successful vsce package doesn't prove the bundle has all its

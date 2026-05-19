@@ -97,6 +97,12 @@ jobs:
       - name: TypeScript compile
         run: npm run compile
 
+      - name: Unit tests
+        run: npm test
+
+      - name: Bundle smoke
+        run: npm run smoke
+
       - name: Package vsix
         # vsce and ovsx are pinned devDependencies in package.json, so
         # `npm ci` above installed the exact versions and Dependabot

@@ -207,6 +207,8 @@
     "bundle:prod": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --minify",
     "watch": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --sourcemap --watch",
     "lint": "eslint src --ext ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "smoke": "node scripts/smoke.js",
     "package": "vsce package",
     "publish:vsce": "vsce publish --packagePath",
@@ -224,6 +226,7 @@
     "esbuild": "^0.25.0",
     "eslint": "^8.56.0",
     "ovsx": "^0.10.12",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "vitest": "^4.1.6"
   }
 }

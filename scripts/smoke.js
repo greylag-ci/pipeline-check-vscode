@@ -14,7 +14,17 @@ const Module = require("module");
 // load-time failures are how a missing dep would surface in production.
 // Anything we didn't enumerate falls through to a generic class stub so
 // `class X extends vscode.CompletionItem` etc. don't throw.
+//
+// Constructible classes that the SUT calls at *module load time* — not
+// just inside a function — must be declared here, because esbuild's
+// `__toESM` namespace wrapper enumerates own keys at load time and a
+// Proxy's dynamic get is invisible to that enumeration. The two below
+// come from findingsView.ts's top-level SEVERITY_ICON table.
+class StubThemeIcon {}
+class StubThemeColor {}
 const known = {
+  ThemeIcon: StubThemeIcon,
+  ThemeColor: StubThemeColor,
   commands: {
     registerCommand: () => ({ dispose: () => undefined }),
   },
@@ -34,7 +44,8 @@ const known = {
 const vscodeStub = new Proxy(known, {
   get(target, prop) {
     if (prop in target) return target[prop];
-    // Default: a class so `class X extends vscode.Y` works.
+    // Default: a class so `class X extends vscode.Y` works for the
+    // languageclient's deep imports (CompletionItem, Diagnostic, etc.).
     target[prop] = class StubVSCodeMember {};
     return target[prop];
   },
