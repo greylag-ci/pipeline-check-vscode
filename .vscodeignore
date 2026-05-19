@@ -5,6 +5,8 @@ src/**
 test-fixtures/**
 scripts/**
 docs/**
+out/**
+ROADMAP.md
 .gitignore
 .eslintrc.json
 tsconfig.json

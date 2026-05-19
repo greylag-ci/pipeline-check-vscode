@@ -38,8 +38,30 @@ commit collapses this section into `## [X.Y.Z] — <date>`.
 - **Hardened the publish workflow.** Pinned `@vscode/vsce` and `ovsx`
   to specific versions (no more `@latest` with PATs in env), added a
   `git merge-base` check that refuses to publish a tag that isn't on
-  `main`, and narrowed workflow-level permissions to `contents: read`
-  with the publish job opting up to `contents: write`.
+  `main`, added a CHANGELOG-fold check, and narrowed workflow-level
+  permissions to `contents: read` with the publish job opting up to
+  `contents: write`.
+- **Added [SECURITY.md](SECURITY.md)** with GitHub Private Vulnerability
+  Reporting as the disclosure channel, response SLAs, and a published
+  threat model.
+
+### Fixed
+
+- **The published `.vsix` was missing its runtime dependency.** The
+  previous build emitted `out/extension.js` via `tsc` but excluded
+  `node_modules/` from the package, so `require("vscode-languageclient/node")`
+  threw on activation in a clean install. Now bundled with esbuild into
+  a single `dist/extension.js` (the only JS in the `.vsix`); a CI
+  smoke step ([scripts/smoke.js](scripts/smoke.js)) stubs the `vscode`
+  module, loads the bundle, and asserts `activate` / `deactivate` are
+  exported so this regression class fails the build instead of the user.
+
+### Changed
+
+- **`npm audit --omit=dev --audit-level=high` now runs on every push to
+  `main`** so advisories filed after a PR has merged still surface.
+- **Marketplace metadata polish.** Added `Other` to `categories`,
+  pointed `qna` at the repo Discussions page.
 
 ### Changed
 

@@ -77,6 +77,20 @@ jobs:
           fi
           echo "Tag $REF_NAME is on main"
 
+      - name: Verify CHANGELOG has a section for this version
+        # publish.yml already enforces tag/version parity. This step
+        # closes the matching changelog-fold gap: if the "Unreleased"
+        # entries haven't been moved into a "## [X.Y.Z]" section, the
+        # release-notes extraction below would ship the wrong content.
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          if ! grep -E "^## \[${version}\]" CHANGELOG.md > /dev/null; then
+            echo "::error::CHANGELOG.md is missing a '## [${version}]' section — fold the Unreleased entries before tagging"
+            exit 1
+          fi
+          echo "CHANGELOG section found for ${version}"
+
       - name: Lint
         run: npm run lint
 

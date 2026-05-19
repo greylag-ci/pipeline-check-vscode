@@ -64,6 +64,11 @@ function buildClient(): LanguageClient {
   const clientOptions: LanguageClientOptions = {
     documentSelector: [
       { scheme: "file", language: "yaml" },
+      // The official GitHub Actions extension (github.vscode-github-actions)
+      // assigns its own language ID to .github/workflows/*.yml. Without
+      // this entry the headline use case (GHA linting) is invisible to the
+      // extension for anyone who has the GitHub Actions extension installed.
+      { scheme: "file", language: "github-actions-workflow" },
       { scheme: "file", language: "json" },
       { scheme: "file", language: "dockerfile" },
       { scheme: "file", language: "terraform" },
@@ -86,6 +91,10 @@ function buildClient(): LanguageClient {
         const threshold = vscode.workspace
           .getConfiguration("pipelineCheck")
           .get<string>("severityThreshold", "low");
+        // VS Code constrains the setting to the enum in package.json, so
+        // the lookup should always hit. The `?? LOW` is defense-in-depth
+        // against a hand-edited settings.json with a bogus value: a
+        // diagnostic must clear the LOW bar, never silently disappear.
         const minRank = THRESHOLD_RANK[threshold] ?? SEVERITY_RANK.LOW;
         const filtered = diagnostics.filter((diag) => {
           const data = (diag as vscode.Diagnostic & {

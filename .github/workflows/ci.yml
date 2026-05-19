@@ -34,9 +34,19 @@ jobs:
       - name: TypeScript compile
         run: npm run compile
 
+      - name: Bundle smoke
+        # Catches the "vsix packages but won't load" failure mode — a
+        # successful vsce package doesn't prove the bundle has all its
+        # runtime deps. Loads dist/extension.js with a vscode stub and
+        # asserts activate/deactivate are exported.
+        run: npm run smoke
+
+      - name: npm audit (prod deps, high+)
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Verify vsix packs cleanly
         run: |
-          npx --yes @vscode/vsce@latest package --out pipeline-check.vsix
+          npx --yes @vscode/vsce@3.9.1 package --out pipeline-check.vsix
           ls -lh pipeline-check.vsix
 
       - uses: actions/upload-artifact@v4
