@@ -20,7 +20,12 @@ import {
 } from "vscode-languageclient/node";
 import { FindingsCodeLensProvider } from "./codeLens";
 import { FindingsTreeProvider, GroupMode } from "./findingsView";
+import {
+  copyInstallCommandToClipboard,
+  installInTerminal,
+} from "./install";
 import * as clientLog from "./log";
+import { setLspReady } from "./lspState";
 import { goToFinding } from "./navigate";
 import {
   providerForPath,
@@ -104,35 +109,6 @@ type LeafLike = {
 };
 
 let client: LanguageClient | undefined;
-
-// Drives the `when` clauses on the two `viewsWelcome` entries: an
-// install-prompt panel before the LSP comes up, a "Scan workspace"
-// panel once it is connected. Defaults to false on registration, so
-// the install panel is what users see on the very first activation
-// before startClient runs.
-const LSP_READY_CONTEXT_KEY = "pipelineCheck.lspReady";
-
-function setLspReady(ready: boolean): void {
-  void vscode.commands.executeCommand(
-    "setContext",
-    LSP_READY_CONTEXT_KEY,
-    ready,
-  );
-}
-
-const PIP_INSTALL_COMMAND = 'pip install "pipeline-check[lsp]"';
-
-// Opens a new integrated terminal and types the pip install command
-// without pressing Enter. The user reviews the command (and, when
-// needed, activates their conda env / venv first) before running it.
-// Auto-running here would install into whatever Python the shell's
-// default `pip` points at — usually wrong when the user has a project
-// venv they haven't activated yet.
-function installInTerminal(): void {
-  const terminal = vscode.window.createTerminal("Pipeline-Check install");
-  terminal.show();
-  terminal.sendText(PIP_INSTALL_COMMAND, false);
-}
 
 function buildClient(): LanguageClient {
   const config = vscode.workspace.getConfiguration("pipelineCheck");
@@ -419,20 +395,16 @@ export async function activate(
     // welcome panel — it opens a terminal with the pip command typed
     // but not executed, so the user reviews / activates their venv
     // first. copyInstallCommand stays registered as a fallback for
-    // users in headless / non-terminal flows.
+    // users in headless / non-terminal flows. Both bodies live in
+    // install.ts so the welcome-panel CTAs and the LSP-failure toast
+    // share one code path.
     vscode.commands.registerCommand(
       "pipelineCheck.installInTerminal",
-      () => installInTerminal(),
+      installInTerminal,
     ),
     vscode.commands.registerCommand(
       "pipelineCheck.copyInstallCommand",
-      async () => {
-        await vscode.env.clipboard.writeText(PIP_INSTALL_COMMAND);
-        vscode.window.setStatusBarMessage(
-          `Copied: ${PIP_INSTALL_COMMAND}`,
-          CONFIRM_TTL_MS,
-        );
-      },
+      copyInstallCommandToClipboard,
     ),
     vscode.commands.registerCommand("pipelineCheck.goToNextFinding", () =>
       goToFinding("next"),

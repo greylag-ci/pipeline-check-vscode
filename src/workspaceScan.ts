@@ -27,7 +27,11 @@ const EXCLUDE_GLOB =
 // found" even when workflows are present. One findFiles per pattern keeps
 // each glob shallow (at most one brace level for `.{yml,yaml}`) and the
 // result is deduped on the URI string.
-async function findScannableFiles(
+//
+// Exported so the unit suite can pin the "one findFiles call per
+// pattern, deduped on URI string" contract that prevents a future
+// re-introduction of the nested-brace bug.
+export async function findScannableFiles(
   patterns: readonly string[],
   exclude: string,
 ): Promise<vscode.Uri[]> {
