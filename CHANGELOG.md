@@ -15,6 +15,19 @@ versions follow [SemVer](https://semver.org/).
 
 ### Added
 
+- **Status bar background colour reflects severity.** A workspace with
+  any CRITICAL finding tints the bar to `statusBarItem.errorBackground`
+  (red in the default themes); a workspace with HIGH but no CRITICAL
+  tints to `statusBarItem.warningBackground` (yellow). MEDIUM / LOW /
+  INFO keep the default fg colour so a "1 medium" workspace doesn't
+  shout. Same ThemeColor tokens ESLint and Error Lens use, so the
+  visual language reads correctly to any existing VS Code user.
+- **"What's new" notification on upgrade.** First activation after a
+  version bump shows a one-time toast — "Pipeline-Check 0.X.Y is here
+  …" — with a "See release notes" button that opens the matching
+  GitHub release. Persists the seen-version *before* showing so a
+  missed dismissal doesn't loop next launch. Suppressed when the
+  stored version equals the manifest version (same launch).
 - **`Pipeline-Check: Scan Workspace` command.** Walks every CI/config
   file in the workspace (matching the same patterns the LSP's
   `documentSelector` uses), opens each via

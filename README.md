@@ -5,6 +5,7 @@
 [![VS Code Marketplace](https://vsmarketplacebadges.dev/version-short/greylag-ci.pipeline-check.svg)](https://marketplace.visualstudio.com/items?itemName=greylag-ci.pipeline-check)
 [![Open VSX](https://img.shields.io/open-vsx/v/greylag-ci/pipeline-check?label=open%20vsx)](https://open-vsx.org/extension/greylag-ci/pipeline-check)
 [![Installs](https://vsmarketplacebadges.dev/installs-short/greylag-ci.pipeline-check.svg)](https://marketplace.visualstudio.com/items?itemName=greylag-ci.pipeline-check)
+[![Socket](https://socket.dev/api/badge/openvsx/package/greylag-ci.pipeline-check)](https://socket.dev/openvsx/package/greylag-ci.pipeline-check/overview)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CodeRabbit](https://img.shields.io/coderabbit/prs/github/greylag-ci/pipeline-check-vscode?labelColor=171717&color=FF570A&label=CodeRabbit+Reviews)](https://coderabbit.ai)
 
