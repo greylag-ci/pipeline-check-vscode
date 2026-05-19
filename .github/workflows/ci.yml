@@ -54,7 +54,7 @@ jobs:
           npx vsce package --out pipeline-check.vsix
           ls -lh pipeline-check.vsix
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: vsix
           path: pipeline-check.vsix
