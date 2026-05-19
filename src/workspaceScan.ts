@@ -12,6 +12,7 @@
 
 import * as vscode from "vscode";
 
+import { isLspReady } from "./lspState";
 import { TRIGGER_PATTERNS } from "./providers";
 
 // Common heavy directories that should never carry a real workflow file
@@ -27,7 +28,11 @@ const EXCLUDE_GLOB =
 // found" even when workflows are present. One findFiles per pattern keeps
 // each glob shallow (at most one brace level for `.{yml,yaml}`) and the
 // result is deduped on the URI string.
-async function findScannableFiles(
+//
+// Exported so the unit suite can pin the "one findFiles call per
+// pattern, deduped on URI string" contract that prevents a future
+// re-introduction of the nested-brace bug.
+export async function findScannableFiles(
   patterns: readonly string[],
   exclude: string,
 ): Promise<vscode.Uri[]> {
@@ -84,6 +89,37 @@ export async function scanWorkspace(
       void vscode.window.showInformationMessage(
         "Pipeline-Check: open a workspace folder before scanning.",
       );
+    }
+    return { scanned: 0, failed: 0, cancelled: false };
+  }
+
+  // Without a live LSP the scan would `openTextDocument` every
+  // candidate file and then... nothing — no didOpen recipient, no
+  // diagnostics published, no Findings update. The completion toast
+  // would still claim "scanned N files", which is a worse signal than
+  // a clear "LSP isn't running" cue with an actionable button. Skip
+  // the scan in that case and route the user toward the install /
+  // restart path.
+  if (!isLspReady()) {
+    if (!quiet) {
+      void vscode.window
+        .showWarningMessage(
+          "Pipeline-Check: language server is not running. Install it (or restart) before scanning.",
+          "Install in terminal",
+          "Restart language server",
+          "Open server log",
+        )
+        .then((choice) => {
+          if (choice === "Install in terminal") {
+            void vscode.commands.executeCommand(
+              "pipelineCheck.installInTerminal",
+            );
+          } else if (choice === "Restart language server") {
+            void vscode.commands.executeCommand("pipelineCheck.restart");
+          } else if (choice === "Open server log") {
+            void vscode.commands.executeCommand("pipelineCheck.showLog");
+          }
+        });
     }
     return { scanned: 0, failed: 0, cancelled: false };
   }
