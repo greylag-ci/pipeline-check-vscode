@@ -12,6 +12,7 @@ vi.mock("vscode", () => ({
 
 import {
   countDiagnostics,
+  formatStatusBarAccessibilityLabel,
   formatStatusBarText,
   formatStatusBarTooltip,
 } from "./statusBar";
@@ -141,5 +142,79 @@ describe("countDiagnostics", () => {
         iter as unknown as Iterable<readonly [unknown, readonly never[]]>,
       ),
     ).toEqual({ CRITICAL: 1, HIGH: 1, MEDIUM: 0, LOW: 0, INFO: 0 });
+  });
+});
+
+describe("formatStatusBarAccessibilityLabel", () => {
+  it("returns a clean message when there are no findings", () => {
+    expect(
+      formatStatusBarAccessibilityLabel({
+        CRITICAL: 0,
+        HIGH: 0,
+        MEDIUM: 0,
+        LOW: 0,
+        INFO: 0,
+      }),
+    ).toBe("Pipeline-Check: no findings");
+  });
+
+  it("spells out the per-severity tally with full words", () => {
+    expect(
+      formatStatusBarAccessibilityLabel({
+        CRITICAL: 3,
+        HIGH: 1,
+        MEDIUM: 0,
+        LOW: 0,
+        INFO: 0,
+      }),
+    ).toBe("Pipeline-Check: 3 critical, 1 high");
+  });
+
+  it("omits zero buckets so the label stays scannable", () => {
+    expect(
+      formatStatusBarAccessibilityLabel({
+        CRITICAL: 0,
+        HIGH: 0,
+        MEDIUM: 0,
+        LOW: 5,
+        INFO: 0,
+      }),
+    ).toBe("Pipeline-Check: 5 low");
+  });
+
+  it("contains no codicon shortcodes (screen readers can't read $(shield))", () => {
+    const label = formatStatusBarAccessibilityLabel({
+      CRITICAL: 1,
+      HIGH: 1,
+      MEDIUM: 0,
+      LOW: 0,
+      INFO: 0,
+    });
+    expect(label).not.toMatch(/\$\(/);
+  });
+});
+
+describe("formatStatusBarTooltip", () => {
+  it("teaches the Alt+F8 keyboard shortcut on the trailing line", () => {
+    const tip = formatStatusBarTooltip({
+      CRITICAL: 1,
+      HIGH: 0,
+      MEDIUM: 0,
+      LOW: 0,
+      INFO: 0,
+    });
+    expect(tip).toContain("Alt+F8");
+    expect(tip).toContain("Shift+Alt+F8");
+  });
+
+  it("does not include the keyboard hint when there are no findings", () => {
+    const tip = formatStatusBarTooltip({
+      CRITICAL: 0,
+      HIGH: 0,
+      MEDIUM: 0,
+      LOW: 0,
+      INFO: 0,
+    });
+    expect(tip).not.toContain("Alt+F8");
   });
 });

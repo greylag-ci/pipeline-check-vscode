@@ -83,6 +83,17 @@ const LANGUAGE_ID = "pipelineCheck";
 const LANGUAGE_NAME = "Pipeline-Check";
 const OUTPUT_CHANNEL = "Pipeline-Check";
 
+// Structural shape of a Findings-tree leaf node, used by the
+// context-menu commands. The real LeafNode lives in findingsView.ts;
+// duplicating just the fields the commands read keeps extension.ts
+// independent of the tree's internal type definitions.
+type LeafLike = {
+  readonly finding?: {
+    readonly ruleId?: string;
+    readonly docsUrl?: string;
+  };
+};
+
 let client: LanguageClient | undefined;
 
 function buildClient(): LanguageClient {
@@ -266,6 +277,51 @@ export async function activate(
     vscode.commands.registerCommand(
       "pipelineCheck.findings.changeGrouping",
       () => changeGrouping(findingsProvider),
+    ),
+    // Context-menu entries on a Findings tree leaf. VS Code passes the
+    // TreeNode as the first argument; we read the `finding` shape off
+    // it. Both commands are gated behind `viewItem == pipelineCheck.finding`
+    // in package.json so the node is always a leaf when these fire.
+    vscode.commands.registerCommand(
+      "pipelineCheck.findings.copyRuleId",
+      async (node: LeafLike | undefined) => {
+        const id = node?.finding?.ruleId?.trim();
+        if (!id) {
+          void vscode.window.showInformationMessage(
+            "Pipeline-Check: this finding has no rule ID.",
+          );
+          return;
+        }
+        await vscode.env.clipboard.writeText(id);
+        void vscode.window.showInformationMessage(`Copied ${id} to clipboard.`);
+      },
+    ),
+    vscode.commands.registerCommand(
+      "pipelineCheck.findings.openRuleDocs",
+      async (node: LeafLike | undefined) => {
+        const url = node?.finding?.docsUrl?.trim();
+        if (!url) {
+          void vscode.window.showInformationMessage(
+            "Pipeline-Check: no documentation URL was published for this rule.",
+          );
+          return;
+        }
+        await vscode.env.openExternal(vscode.Uri.parse(url));
+      },
+    ),
+    // Copy-install-command also lives in the welcome-state and is
+    // promoted to a top-level command so users can re-find it after
+    // dismissing the first-run notification.
+    vscode.commands.registerCommand(
+      "pipelineCheck.copyInstallCommand",
+      async () => {
+        await vscode.env.clipboard.writeText(
+          'pip install "pipeline-check[lsp]"',
+        );
+        void vscode.window.showInformationMessage(
+          'Copied: pip install "pipeline-check[lsp]"',
+        );
+      },
     ),
     vscode.commands.registerCommand("pipelineCheck.goToNextFinding", () =>
       goToFinding("next"),

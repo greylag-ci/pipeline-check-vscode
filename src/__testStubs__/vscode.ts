@@ -73,6 +73,27 @@ export function vscodeStub(): Record<string, unknown> {
   const TreeItemCollapsibleState = { None: 0, Collapsed: 1, Expanded: 2 };
   const StatusBarAlignment = { Left: 1, Right: 2 };
 
+  class Range {
+    constructor(
+      public readonly startLine: number,
+      public readonly startCharacter: number,
+      public readonly endLine: number,
+      public readonly endCharacter: number,
+    ) {}
+    get start() {
+      return { line: this.startLine, character: this.startCharacter };
+    }
+    get end() {
+      return { line: this.endLine, character: this.endCharacter };
+    }
+  }
+  class CodeLens {
+    constructor(
+      public readonly range: Range,
+      public readonly command?: { title: string; command: string },
+    ) {}
+  }
+
   return {
     ThemeIcon,
     ThemeColor,
@@ -81,10 +102,28 @@ export function vscodeStub(): Record<string, unknown> {
     MarkdownString,
     TreeItemCollapsibleState,
     StatusBarAlignment,
+    Range,
+    CodeLens,
     Uri,
     workspace: {
       asRelativePath: (uri: { fsPath?: string; path?: string }) =>
         uri.fsPath ?? uri.path ?? "",
+      // `getConfiguration(section).get(key, fallback)` reads from
+      // `globalThis.__stubConfig`, a `Record<string, unknown>` keyed
+      // by `<section>.<key>` (or just `<key>` if no section was
+      // passed). Tests set the dictionary in beforeEach so each
+      // test's expectations are isolated.
+      getConfiguration: (section?: string) => ({
+        get: <T>(key: string, fallback?: T): T => {
+          const store =
+            (globalThis as { __stubConfig?: Record<string, unknown> })
+              .__stubConfig ?? {};
+          const fullKey = section ? `${section}.${key}` : key;
+          if (fullKey in store) return store[fullKey] as T;
+          return fallback as T;
+        },
+      }),
+      onDidChangeConfiguration: () => ({ dispose: () => undefined }),
     },
     languages: {
       // Two call shapes:

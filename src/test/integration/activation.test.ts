@@ -33,8 +33,11 @@ suite("Pipeline-Check — activation", () => {
     const expected = [
       "pipelineCheck.restart",
       "pipelineCheck.showLog",
+      "pipelineCheck.copyInstallCommand",
       "pipelineCheck.findings.refresh",
       "pipelineCheck.findings.changeGrouping",
+      "pipelineCheck.findings.copyRuleId",
+      "pipelineCheck.findings.openRuleDocs",
       "pipelineCheck.goToNextFinding",
       "pipelineCheck.goToPreviousFinding",
     ];

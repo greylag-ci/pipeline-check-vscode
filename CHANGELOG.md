@@ -53,8 +53,54 @@ merge first.
   marketplace pre-release channel; the matching GitHub release is
   marked `prerelease`. Detection is by the presence of a `-` after
   the semver core. (R24)
+- **Right-click context menu on Findings tree leaves.** *Open Rule
+  Documentation* opens the URL the server published via
+  `Diagnostic.code.target` in the system browser; *Copy Rule ID*
+  writes the rule's identifier to the clipboard. Same data the leaf
+  tooltip already surfaces, now available without keeping the
+  tooltip open.
+- **`pipelineCheck.codeLens.enabled` setting.** Defaults to `true`.
+  Hides the line-1 file-summary CodeLens for users who find it
+  intrusive without disabling CodeLens globally. Toggle takes effect
+  on the next render — no extension restart.
+- **`pipelineCheck.copyInstallCommand` command.** Copies
+  `pip install "pipeline-check[lsp]"` to the clipboard. Surfaced
+  from the Findings welcome state and from the Command Palette so
+  users can re-find it after dismissing the first-run error toast.
 
 ### Changed
+
+- **Welcome state of the Findings panel teaches.** Now leads with
+  what Pipeline-Check does + a *Copy install command* link for the
+  Python `[lsp]` extra, then onboarding ("open a workflow…"), then
+  the Alt+F8 / Shift+Alt+F8 keyboard hint, then a `---` separator
+  and the recovery actions (Restart, Open Log) demoted below.
+- **`onStartupFinished` activation event.** The extension now wakes
+  up after VS Code's start-up barrier so the activity-bar slot is
+  visible in every workspace — not just ones with a
+  `workspaceContains:` match. The LSP child process still only
+  spawns when the `documentSelector` matches an open document, so
+  there's no idle-Python-process cost.
+- **Status bar item hides in non-CI workspaces.** On activation we
+  do a one-shot `findFiles` for any of the trigger patterns; the
+  status bar item only shows once we've seen evidence the workspace
+  is CI-relevant (either a match or an actual diagnostic publish).
+  Stops `$(shield) clean` cluttering the bottom-left in frontend
+  projects that happen to have Pipeline-Check installed alongside
+  other linters.
+- **Status bar accessibility label.** Screen readers now hear
+  "Pipeline-Check: 3 critical, 1 high" instead of the codicon
+  shortcode + letter-by-letter abbreviation.
+- **Status bar tooltip teaches Alt+F8.** The trailing line of the
+  tooltip ("Alt+F8 / Shift+Alt+F8 to step through findings") is the
+  primary discovery surface for the navigation keybindings.
+- **Command titles use title case** for VS Code's convention:
+  "Restart Language Server", "Show Language Server Output",
+  "Refresh Findings". Existing "Go to Next Finding" and "Change
+  Grouping" stay the same. Command IDs are unchanged — settings,
+  keybindings, and automation continue to work.
+
+### Changed (release tooling)
 
 - **`@vscode/test-electron` integration suite** now runs in CI
   (Linux only, via `xvfb-run -a`). Five tests pin activation, the

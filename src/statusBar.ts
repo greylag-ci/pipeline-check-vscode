@@ -69,6 +69,9 @@ export function formatStatusBarText(c: SeverityCounts): string {
  * Render the tooltip — a longer breakdown shown on hover. Always
  * lists every nonzero bucket, so the abbreviated bar text never
  * hides information; just makes it less prominent.
+ *
+ * The trailing hint ("Click… Alt+F8…") doubles as keyboard-shortcut
+ * discovery: most users find Alt+F8 here, not by reading the README.
  */
 export function formatStatusBarTooltip(c: SeverityCounts): string {
   const total = c.CRITICAL + c.HIGH + c.MEDIUM + c.LOW + c.INFO;
@@ -84,7 +87,35 @@ export function formatStatusBarTooltip(c: SeverityCounts): string {
     }
   }
   lines.push("Click to open the Findings panel.");
+  lines.push("Alt+F8 / Shift+Alt+F8 to step through findings.");
   return lines.join("\n");
+}
+
+/**
+ * Render a screen-reader-friendly version of the status bar text.
+ * Codicons like ``$(shield)`` are read aloud as "shield" by some
+ * narrators and skipped by others; the abbreviation "3C 1H" reads
+ * as letter-by-letter spelling. The accessible label uses full
+ * words for both the icon role and the counts.
+ */
+export function formatStatusBarAccessibilityLabel(c: SeverityCounts): string {
+  const total = c.CRITICAL + c.HIGH + c.MEDIUM + c.LOW + c.INFO;
+  if (total === 0) {
+    return "Pipeline-Check: no findings";
+  }
+  const parts: string[] = [];
+  for (const [name, count] of [
+    ["critical", c.CRITICAL],
+    ["high", c.HIGH],
+    ["medium", c.MEDIUM],
+    ["low", c.LOW],
+    ["info", c.INFO],
+  ] as const) {
+    if (count > 0) {
+      parts.push(`${count} ${name}`);
+    }
+  }
+  return `Pipeline-Check: ${parts.join(", ")}`;
 }
 
 /**
@@ -123,11 +154,28 @@ function readSeverity(diag: vscode.Diagnostic): SeverityName {
   }
 }
 
+// File patterns that suggest the current workspace is worth showing
+// the status bar in. Mirrors providers.ts's TRIGGER_PATTERNS — kept
+// inline here so the status bar can ship without a circular import
+// (providers.ts is consumed by extension.ts which orchestrates this
+// module).
+const WORKSPACE_HAS_CI_GLOB =
+  "{**/.github/workflows/*.yml,**/.github/workflows/*.yaml,**/.gitlab-ci.yml,**/azure-pipelines.yml,**/bitbucket-pipelines.yml,**/.circleci/config.yml,**/cloudbuild.yaml,**/.buildkite/pipeline.yml,**/.drone.yml,**/.drone.yaml,**/Jenkinsfile,**/Dockerfile,**/Containerfile}";
+
 /**
- * Wire up the status bar item. Returns a Disposable the caller pushes
- * onto the extension's subscriptions so the item is removed on
- * deactivate. The item itself rewires on every diagnostic change and
- * navigates to the Findings panel on click.
+ * Wire up the status bar item. Returns the item the caller pushes
+ * onto the extension's subscriptions so it's removed on deactivate.
+ * The item rewires on every diagnostic change and navigates to the
+ * Findings panel on click.
+ *
+ * Visibility policy: the item is hidden until we observe either at
+ * least one scannable file in the workspace or at least one
+ * pipeline-check diagnostic. This keeps the status bar quiet for
+ * users who installed Pipeline-Check but currently have a frontend
+ * project (or anything else without CI files) open — common in
+ * monorepo / multi-window setups. Once the workspace has been
+ * "seen" as relevant, the item stays visible even when findings
+ * fall to zero (so the "clean" signal earns its keep).
  */
 export function registerStatusBar(
   context: vscode.ExtensionContext,
@@ -136,19 +184,43 @@ export function registerStatusBar(
     vscode.StatusBarAlignment.Left,
     100,
   );
-  // Click reveals the Findings panel; same action as the activity-bar
-  // icon, just from a different surface.
   item.command = "pipelineCheck.findings.focus";
   item.name = "Pipeline-Check";
+
+  // Latches once: as soon as we've seen evidence this workspace is
+  // CI-relevant, we keep showing the item.
+  let relevant = false;
 
   const update = () => {
     const counts = countDiagnostics(vscode.languages.getDiagnostics());
     item.text = formatStatusBarText(counts);
     item.tooltip = formatStatusBarTooltip(counts);
-    item.show();
+    item.accessibilityInformation = {
+      label: formatStatusBarAccessibilityLabel(counts),
+    };
+    const total =
+      counts.CRITICAL + counts.HIGH + counts.MEDIUM + counts.LOW + counts.INFO;
+    if (total > 0) relevant = true;
+    if (relevant) {
+      item.show();
+    } else {
+      item.hide();
+    }
   };
 
-  // Seed and subscribe.
+  // One-shot scan to learn whether the workspace has any candidate
+  // files at all. If yes, the item is allowed to show immediately
+  // (with `clean` text until the first publish arrives). If not, we
+  // wait — first diagnostic publish flips `relevant` and unblocks.
+  void vscode.workspace
+    .findFiles(WORKSPACE_HAS_CI_GLOB, "**/{node_modules,.git}/**", 1)
+    .then((uris) => {
+      if (uris.length > 0) {
+        relevant = true;
+        update();
+      }
+    });
+
   update();
   context.subscriptions.push(
     item,

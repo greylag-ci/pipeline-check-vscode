@@ -98,10 +98,26 @@ export class FindingsCodeLensProvider implements vscode.CodeLensProvider {
       vscode.languages.onDidChangeDiagnostics(() =>
         this._onDidChangeCodeLenses.fire(),
       ),
+      // The `pipelineCheck.codeLens.enabled` setting toggles whether
+      // we emit lenses at all. When it flips, re-fire so the editor
+      // either picks up or drops the lens immediately, with no
+      // restart required.
+      vscode.workspace.onDidChangeConfiguration((e) => {
+        if (e.affectsConfiguration("pipelineCheck.codeLens.enabled")) {
+          this._onDidChangeCodeLenses.fire();
+        }
+      }),
     );
   }
 
   provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
+    // Honour the per-extension toggle. Users who find the line-1 lens
+    // intrusive can hide it without disabling CodeLens globally.
+    const enabled = vscode.workspace
+      .getConfiguration("pipelineCheck")
+      .get<boolean>("codeLens.enabled", true);
+    if (!enabled) return [];
+
     const counts = summariseCounts(
       vscode.languages.getDiagnostics(document.uri),
     );

@@ -1,11 +1,15 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("vscode", async () => {
   const { vscodeStub } = await import("./__testStubs__/vscode");
   return vscodeStub();
 });
 
-import { composeLensTitle, summariseCounts } from "./codeLens";
+import {
+  FindingsCodeLensProvider,
+  composeLensTitle,
+  summariseCounts,
+} from "./codeLens";
 
 const diag = (severity?: string, source = "pipeline-check") =>
   ({
@@ -110,5 +114,66 @@ describe("composeLensTitle", () => {
     expect(t).toBe(
       "Pipeline-Check: 1 critical · 1 high · 1 medium · 1 low · 1 info",
     );
+  });
+});
+
+describe("FindingsCodeLensProvider — pipelineCheck.codeLens.enabled toggle", () => {
+  // The provider reads `pipelineCheck.codeLens.enabled` on every
+  // `provideCodeLenses` call so a settings flip takes effect on the
+  // next render — no extension restart, no editor reopen. These
+  // tests pin that behaviour with the shared vscode stub's
+  // `getConfiguration` reading from `globalThis.__stubConfig`.
+
+  const ctx = {
+    subscriptions: [] as Array<{ dispose: () => void }>,
+  } as unknown as import("vscode").ExtensionContext;
+
+  const document = {
+    uri: {
+      toString: () => "file:///a.yml",
+      fsPath: "/a.yml",
+      path: "/a.yml",
+    },
+  } as unknown as import("vscode").TextDocument;
+
+  beforeEach(() => {
+    (globalThis as { __stubDiagnostics?: unknown }).__stubDiagnostics = [
+      [
+        { toString: () => "file:///a.yml" },
+        [
+          {
+            source: "pipeline-check",
+            message: "",
+            range: {
+              start: { line: 0, character: 0 },
+              end: { line: 0, character: 0 },
+            },
+            severity: 0,
+            data: { severity: "CRITICAL" },
+          },
+        ],
+      ],
+    ];
+    (globalThis as { __stubConfig?: Record<string, unknown> }).__stubConfig = {};
+  });
+
+  it("emits a lens when codeLens.enabled is true (default)", () => {
+    const p = new FindingsCodeLensProvider(ctx);
+    const lenses = p.provideCodeLenses(document) as unknown[];
+    expect(lenses).toHaveLength(1);
+  });
+
+  it("emits no lens when codeLens.enabled is false", () => {
+    (globalThis as { __stubConfig?: Record<string, unknown> }).__stubConfig = {
+      "pipelineCheck.codeLens.enabled": false,
+    };
+    const p = new FindingsCodeLensProvider(ctx);
+    expect(p.provideCodeLenses(document)).toEqual([]);
+  });
+
+  it("emits no lens when there are no pipeline-check diagnostics, even if enabled", () => {
+    (globalThis as { __stubDiagnostics?: unknown }).__stubDiagnostics = [];
+    const p = new FindingsCodeLensProvider(ctx);
+    expect(p.provideCodeLenses(document)).toEqual([]);
   });
 });
