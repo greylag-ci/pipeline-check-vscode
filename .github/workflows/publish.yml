@@ -98,13 +98,13 @@ jobs:
         run: npm run compile
 
       - name: Package vsix
-        # vsce and ovsx are pinned so a compromised @latest can't ship a
-        # surprise build (and exfiltrate the PATs below). Bump via
-        # Dependabot like the rest of the deps.
+        # vsce and ovsx are pinned devDependencies in package.json, so
+        # `npm ci` above installed the exact versions and Dependabot
+        # bumps them via the standard npm config. `npx` here resolves
+        # the local binary — no fresh fetch with PATs in env.
         run: |
           version=$(node -p "require('./package.json').version")
-          npx --yes @vscode/vsce@3.9.1 package \
-            --out "pipeline-check-${version}.vsix"
+          npx vsce package --out "pipeline-check-${version}.vsix"
           ls -lh "pipeline-check-${version}.vsix"
           echo "VSIX_PATH=pipeline-check-${version}.vsix" >> $GITHUB_ENV
 
@@ -112,7 +112,7 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
-          npx --yes @vscode/vsce@3.9.1 publish \
+          npx vsce publish \
             --packagePath "$VSIX_PATH" \
             --pat "$VSCE_PAT"
 
@@ -120,7 +120,7 @@ jobs:
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: |
-          npx --yes ovsx@0.10.12 publish "$VSIX_PATH" \
+          npx ovsx publish "$VSIX_PATH" \
             --pat "$OVSX_PAT"
 
       - name: Create GitHub release

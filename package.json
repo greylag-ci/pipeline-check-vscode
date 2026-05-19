@@ -41,12 +41,19 @@
   "homepage": "https://github.com/greylag-ci/pipeline-check-vscode#readme",
   "main": "./dist/extension.js",
   "activationEvents": [
-    "onLanguage:yaml",
-    "onLanguage:github-actions-workflow",
-    "onLanguage:json",
-    "onLanguage:dockerfile",
-    "onLanguage:terraform",
-    "onLanguage:groovy"
+    "workspaceContains:**/.github/workflows/*.yml",
+    "workspaceContains:**/.github/workflows/*.yaml",
+    "workspaceContains:**/.gitlab-ci.yml",
+    "workspaceContains:**/azure-pipelines.yml",
+    "workspaceContains:**/bitbucket-pipelines.yml",
+    "workspaceContains:**/.circleci/config.yml",
+    "workspaceContains:**/cloudbuild.yaml",
+    "workspaceContains:**/.buildkite/pipeline.yml",
+    "workspaceContains:**/.drone.yml",
+    "workspaceContains:**/.drone.yaml",
+    "workspaceContains:**/Jenkinsfile",
+    "workspaceContains:**/Dockerfile",
+    "workspaceContains:**/Containerfile"
   ],
   "capabilities": {
     "untrustedWorkspaces": {
@@ -56,6 +63,30 @@
     "virtualWorkspaces": false
   },
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "pipelineCheck",
+          "title": "Pipeline-Check",
+          "icon": "media/pipeline-check.svg"
+        }
+      ]
+    },
+    "views": {
+      "pipelineCheck": [
+        {
+          "id": "pipelineCheck.findings",
+          "name": "Findings",
+          "contextualTitle": "Pipeline-Check"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "pipelineCheck.findings",
+        "contents": "No Pipeline-Check findings in open files.\n\nOpen a CI/CD configuration (for example a workflow under `.github/workflows/`) and findings will appear here as the server scans.\n\n[Restart language server](command:pipelineCheck.restart)\n[Show server log](command:pipelineCheck.showLog)"
+      }
+    ],
     "commands": [
       {
         "command": "pipelineCheck.restart",
@@ -66,8 +97,62 @@
         "command": "pipelineCheck.showLog",
         "title": "Show language server output",
         "category": "Pipeline-Check"
+      },
+      {
+        "command": "pipelineCheck.findings.refresh",
+        "title": "Refresh findings",
+        "category": "Pipeline-Check",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "pipelineCheck.findings.groupBy.severity",
+        "title": "Group findings by severity",
+        "category": "Pipeline-Check",
+        "icon": "$(symbol-event)"
+      },
+      {
+        "command": "pipelineCheck.findings.groupBy.file",
+        "title": "Group findings by file",
+        "category": "Pipeline-Check",
+        "icon": "$(file)"
+      },
+      {
+        "command": "pipelineCheck.findings.groupBy.rule",
+        "title": "Group findings by rule",
+        "category": "Pipeline-Check",
+        "icon": "$(symbol-key)"
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "pipelineCheck.findings.groupBy.severity",
+          "when": "view == pipelineCheck.findings && pipelineCheck.groupMode != severity",
+          "group": "navigation@1"
+        },
+        {
+          "command": "pipelineCheck.findings.groupBy.file",
+          "when": "view == pipelineCheck.findings && pipelineCheck.groupMode != file",
+          "group": "navigation@2"
+        },
+        {
+          "command": "pipelineCheck.findings.groupBy.rule",
+          "when": "view == pipelineCheck.findings && pipelineCheck.groupMode != rule",
+          "group": "navigation@3"
+        },
+        {
+          "command": "pipelineCheck.findings.refresh",
+          "when": "view == pipelineCheck.findings",
+          "group": "navigation@9"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "pipelineCheck.findings.refresh",
+          "when": "view == pipelineCheck.findings"
+        }
+      ]
+    },
     "configuration": {
       "type": "object",
       "title": "Pipeline-Check",
@@ -122,7 +207,10 @@
     "bundle:prod": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --minify",
     "watch": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --sourcemap --watch",
     "lint": "eslint src --ext ts",
-    "smoke": "node scripts/smoke.js"
+    "smoke": "node scripts/smoke.js",
+    "package": "vsce package",
+    "publish:vsce": "vsce publish --packagePath",
+    "publish:ovsx": "ovsx publish"
   },
   "dependencies": {
     "vscode-languageclient": "^9.0.1"
@@ -132,8 +220,10 @@
     "@types/vscode": "^1.85.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
+    "@vscode/vsce": "^3.9.1",
     "esbuild": "^0.25.0",
     "eslint": "^8.56.0",
+    "ovsx": "^0.10.12",
     "typescript": "^5.4.0"
   }
 }

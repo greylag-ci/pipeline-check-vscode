@@ -18,6 +18,7 @@ import {
   ServerOptions,
   TransportKind,
 } from "vscode-languageclient/node";
+import { FindingsTreeProvider, GroupMode } from "./findingsView";
 
 const LANGUAGE_ID = "pipelineCheck";
 const LANGUAGE_NAME = "Pipeline-Check";
@@ -57,22 +58,28 @@ function buildClient(): LanguageClient {
     debug: { command, args, transport: TransportKind.stdio },
   };
 
-  // The selector matches every file kind a pipeline_check rule reads.
-  // The server further filters by file content + path so an unrelated
-  // YAML file in the workspace (mkdocs.yml, a Helm `values.yaml`, etc.)
-  // does not get false-positive analysis.
+  // Match by path glob instead of language ID. Language-based selectors
+  // would let unrelated YAML files (mkdocs.yml, Helm `values.yaml`,
+  // package.json, etc.) reach the LSP and rely on the server's
+  // content-and-path filter to bounce them. Path-based selectors keep
+  // that filter as a backstop but hand the server only candidate files
+  // in the first place — smaller cross-section, no dependency on whether
+  // the user has the official GitHub Actions extension installed
+  // (which would otherwise hijack the `github-actions-workflow`
+  // language ID for `.github/workflows/*.yml`).
   const clientOptions: LanguageClientOptions = {
     documentSelector: [
-      { scheme: "file", language: "yaml" },
-      // The official GitHub Actions extension (github.vscode-github-actions)
-      // assigns its own language ID to .github/workflows/*.yml. Without
-      // this entry the headline use case (GHA linting) is invisible to the
-      // extension for anyone who has the GitHub Actions extension installed.
-      { scheme: "file", language: "github-actions-workflow" },
-      { scheme: "file", language: "json" },
-      { scheme: "file", language: "dockerfile" },
-      { scheme: "file", language: "terraform" },
-      { scheme: "file", language: "groovy" },
+      { scheme: "file", pattern: "**/.github/workflows/*.{yml,yaml}" },
+      { scheme: "file", pattern: "**/.gitlab-ci.yml" },
+      { scheme: "file", pattern: "**/azure-pipelines.yml" },
+      { scheme: "file", pattern: "**/bitbucket-pipelines.yml" },
+      { scheme: "file", pattern: "**/.circleci/config.yml" },
+      { scheme: "file", pattern: "**/cloudbuild.yaml" },
+      { scheme: "file", pattern: "**/.buildkite/pipeline.yml" },
+      { scheme: "file", pattern: "**/.drone.{yml,yaml}" },
+      { scheme: "file", pattern: "**/Jenkinsfile" },
+      { scheme: "file", pattern: "**/Dockerfile" },
+      { scheme: "file", pattern: "**/Containerfile" },
     ],
     synchronize: {
       configurationSection: "pipelineCheck",
@@ -174,7 +181,26 @@ async function stopClient(): Promise<void> {
 export async function activate(
   context: vscode.ExtensionContext,
 ): Promise<void> {
+  // The Findings tree reads from already-published diagnostics, so we
+  // wire it up before starting the client. That way, if the server
+  // takes a moment to come up (or fails outright), the panel is still
+  // visible and surfaces findings the moment the first publish lands.
+  const findingsProvider = new FindingsTreeProvider(context);
+  const groupModes: readonly GroupMode[] = ["severity", "file", "rule"];
   context.subscriptions.push(
+    vscode.window.createTreeView("pipelineCheck.findings", {
+      treeDataProvider: findingsProvider,
+      showCollapseAll: true,
+    }),
+    vscode.commands.registerCommand("pipelineCheck.findings.refresh", () =>
+      findingsProvider.refresh(),
+    ),
+    ...groupModes.map((mode) =>
+      vscode.commands.registerCommand(
+        `pipelineCheck.findings.groupBy.${mode}`,
+        () => findingsProvider.setGroupMode(mode),
+      ),
+    ),
     vscode.commands.registerCommand("pipelineCheck.restart", async () => {
       await stopClient();
       await startClient();

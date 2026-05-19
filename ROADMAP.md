@@ -10,6 +10,26 @@ it needs a manual repo-settings change (create the `marketplace`
 environment with required reviewers, then add `environment: marketplace`
 to the publish job).
 
+### Maintainer action items before merging this branch
+
+1. **Create the `marketplace` GitHub Environment** with required
+   reviewers (H2). Without this, the workflow stays vulnerable to a
+   write-access compromise. Once created, add `environment: marketplace`
+   to the publish job — one-line follow-up.
+2. **Enable Private Vulnerability Reporting** on the repo (Settings →
+   Code security). Without it, the link in [SECURITY.md](SECURITY.md)
+   404s and external reporters have nowhere private to file.
+3. **Enable Discussions** on the repo (Settings → General → Features).
+   Without it, the `qna` link in [package.json](package.json) 404s
+   from the marketplace listing.
+4. **Smoke-test the activation narrowing (H4)** — open each provider's
+   sample workflow in the extension-host window (F5 with sample-workflow
+   profile) and confirm diagnostics still appear. The change drops
+   any custom workflow paths.
+5. **Verify the published v0.1.0 actually fails to activate** in a
+   clean VS Code (the C1 hypothesis). If confirmed, this branch
+   becomes a 0.1.1 hotfix.
+
 ---
 
 ## Critical — block the next marketplace publish
@@ -35,9 +55,14 @@ is almost certainly broken in a clean install. CI only verifies that the
 
 **Plan**
 
-- [ ] Verify the published v0.1.0 actually fails to activate in a clean
-      VS Code. (Hypothesis stands, but worth confirming before
-      back-porting a 0.1.1 fix to it.)
+- [ ] **Manual smoke** the maintainer should run: install the
+      published v0.1.0 in a clean VS Code that doesn't have a sibling
+      `pipeline-check-vscode` checkout and confirm it fails to
+      activate. Either: (a) confirms the hypothesis and we cut a 0.1.1
+      hotfix from this branch, or (b) reveals a vsce behavior I don't
+      know about (e.g. it auto-includes prod deps regardless of
+      `.vscodeignore`) — in which case C1's CI smoke step still has
+      value as defense-in-depth.
 - [x] Add an esbuild bundle: `bundle:dev` (sourcemap) and `bundle:prod`
       (minified). `vscode:prepublish` runs `typecheck && bundle:prod`.
       `compile` runs `typecheck && bundle:dev` so F5 stays
@@ -104,22 +129,29 @@ between releases would exfiltrate both PATs.
 
 - [x] Pin `@vscode/vsce@3.9.1` and `ovsx@0.10.12` in publish.yml.
 - [x] Pin the same `@vscode/vsce@3.9.1` in ci.yml.
-- [ ] Cover both with Dependabot like the rest of the npm deps (needs
-      Dependabot config for the workflow files, not just `npm` — already
-      partly there in [.github/dependabot.yml](.github/dependabot.yml)
-      via `github-actions`, but neither vsce nor ovsx is an action).
-      Lowest-friction follow-up: move both to `devDependencies` and let
-      the npm Dependabot config bump them.
+- [x] Moved `@vscode/vsce` and `ovsx` to `devDependencies` so the
+      existing npm Dependabot config bumps them. Workflows now run
+      `npx vsce` / `npx ovsx` after `npm ci`, so the pinned versions
+      live in `package-lock.json` and there's no fresh registry fetch
+      with PATs in env.
 
 ### H2 — No release-environment gate on the publish workflow
 
 `workflow_dispatch` accepts a `tag` input and anyone with push access can
 fire it. PATs are repo-scoped, so any workflow can read them.
 
-- [ ] Create a GitHub Environment (`marketplace`) with required reviewers.
-- [ ] Move `VSCE_PAT` / `OVSX_PAT` from repo secrets to environment
-      secrets; gate the `publish` job on
-      `environment: marketplace`.
+**Manual repo-settings work — cannot land from a branch.** Adding
+`environment: marketplace` to the workflow before the environment
+exists would just fail every publish. Once the env is created, the
+follow-up branch change is a single line.
+
+- [ ] Maintainer: Settings → Environments → New environment
+      "marketplace". Add required reviewers (yourself + any other
+      maintainer). Move `VSCE_PAT` / `OVSX_PAT` from repo secrets to
+      this environment.
+- [ ] Then in a one-line PR: add
+      `environment: marketplace` to the `publish` job in
+      [.github/workflows/publish.yml](.github/workflows/publish.yml).
 
 ### H3 — Tag-driven publish doesn't verify the tag is on `main`
 
@@ -130,18 +162,28 @@ A tag created on an arbitrary commit or a force-moved tag would still ship.
 
 ### H4 — `activationEvents` activates on every YAML/JSON in any project
 
-[package.json:41-47](package.json#L41-L47) activates on `onLanguage:yaml`,
-`onLanguage:json`, etc. Open an unrelated `package.json` or `mkdocs.yml`
-and the extension spawns Python.
+[package.json:41-47](package.json#L41-L47) used to activate on
+`onLanguage:yaml`, `onLanguage:json`, etc., so opening an unrelated
+`package.json` or `mkdocs.yml` would spawn Python.
 
-- [ ] Replace bare `onLanguage:*` triggers with `workspaceContains:`
-      patterns matching the providers we actually scan (`.github/workflows/*`,
+- [x] Replaced bare `onLanguage:*` triggers with `workspaceContains:`
+      patterns for the providers we actually scan (`.github/workflows/*`,
       `.gitlab-ci.yml`, `azure-pipelines.yml`, `bitbucket-pipelines.yml`,
       `.circleci/config.yml`, `cloudbuild.yaml`, `.buildkite/pipeline.yml`,
       `.drone.{yml,yaml}`, `Jenkinsfile`, `Dockerfile`, `Containerfile`).
-- [ ] Tighten the `documentSelector` in [src/extension.ts:65-71](src/extension.ts#L65-L71)
-      to `pattern:` globs that match the same files so the LSP only sees
-      candidate documents.
+- [x] Tightened the `documentSelector` in
+      [src/extension.ts](src/extension.ts) to `pattern:` globs matching
+      the same files. The LSP only sees candidate documents — no more
+      reliance on the server's content filter as a first line of
+      defence, and no dependency on which language extension owns the
+      `github-actions-workflow` language ID.
+- [ ] **Manual smoke** the maintainer should run before merging this
+      branch: open each provider's fixture (GHA, GitLab, Azure,
+      Bitbucket, CircleCI, Cloud Build, Buildkite, Drone, Jenkins,
+      Dockerfile) and confirm diagnostics still appear. Custom
+      workflow paths (e.g. `pipelines/build.yml`) will no longer
+      activate the extension — that's the intent, but worth knowing
+      before users surface it as a bug.
 
 ---
 
@@ -162,8 +204,10 @@ and the extension spawns Python.
 - [x] **M4** publish.yml now refuses to ship a tag whose
       [CHANGELOG.md](CHANGELOG.md) doesn't have a `## [X.Y.Z]` header
       — protects the release-notes extraction that follows.
-- [ ] **M5** When/if a sibling npm package ships, enable `--provenance`
-      on `npm publish` from GitHub-hosted runners.
+- [ ] **M5 (N/A today)** When/if a sibling npm package ships, enable
+      `--provenance` on `npm publish` from GitHub-hosted runners.
+      Nothing to do until an npm package is added. Park here as a
+      reminder.
 
 ---
 

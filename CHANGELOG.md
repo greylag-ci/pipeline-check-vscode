@@ -60,6 +60,19 @@ commit collapses this section into `## [X.Y.Z] — <date>`.
 
 - **`npm audit --omit=dev --audit-level=high` now runs on every push to
   `main`** so advisories filed after a PR has merged still surface.
+- **Activation tightened.** The extension used to activate on every YAML
+  / JSON / Dockerfile / Terraform / Groovy file in any workspace, then
+  rely on the server's content filter to drop unrelated documents.
+  `activationEvents` is now a `workspaceContains:` list of the trigger
+  files we actually scan (`.github/workflows/*`, `.gitlab-ci.yml`,
+  `azure-pipelines.yml`, etc.). The LSP's `documentSelector` is
+  switched from language IDs to matching file-path globs, so the
+  server only sees candidate documents — no more spurious activations
+  on `package.json`, `mkdocs.yml`, or a Helm `values.yaml`.
+- **`@vscode/vsce` and `ovsx` are pinned devDependencies.** Workflows
+  invoke them via the locally-installed binaries (`npx vsce`,
+  `npx ovsx`) after `npm ci`. Versions live in `package-lock.json`
+  and Dependabot's existing npm config keeps them current.
 - **Marketplace metadata polish.** Added `Other` to `categories`,
   pointed `qna` at the repo Discussions page.
 
