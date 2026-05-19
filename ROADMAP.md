@@ -391,3 +391,105 @@ on their own.
       The 50px of vertical space we'd save up front is small
       relative to the structural cost of having to add the header
       back the first time we want a second view.
+
+---
+
+## Review pass (2026-05-19) — improvements from in-depth code review
+
+The findings below came out of a holistic review of the codebase after
+v0.1.1 shipped. Categories cluster related work into reviewable PRs.
+
+### Code-level fixes (cheap wins)
+
+- [ ] **R1** Reorder the `filterByThreshold` import in
+      [src/extension.ts:72](src/extension.ts#L72) up to the rest of the
+      import block. Currently sits after a function declaration.
+- [ ] **R2** "Restart language server" toast at
+      [src/extension.ts:223](src/extension.ts#L223) fires even when
+      `startClient()` failed. Guard with `if (client)`.
+- [ ] **R3** Add a timeout to `stopClient()`
+      ([src/extension.ts:185-192](src/extension.ts#L185-L192)) —
+      a deadlocked LSP child holds the deactivate path indefinitely.
+- [ ] **R4** `groupByFile` does `key = f.uri.toString()` then
+      `vscode.Uri.parse(key)` to get the Uri back
+      ([src/findingsView.ts:357-385](src/findingsView.ts#L357-L385)).
+      Use a `Map<vscode.Uri, Finding[]>` keyed on the Uri directly.
+- [ ] **R5** `compareByLocation`
+      ([src/findingsView.ts:413](src/findingsView.ts#L413)) sorts on
+      `uri.toString()` which includes the `file://` scheme prefix.
+      Sort on `fsPath` instead.
+
+### Performance
+
+- [ ] **R6** Cache `collectFindings()` per refresh. Currently called
+      twice per refresh (`buildRoot` + `updateBadge`); each walks every
+      diagnostic in the workspace.
+- [ ] **R7** Filter `onDidChangeDiagnostics` by the event's `uris`
+      payload — skip the refresh when none of the changed URIs carry a
+      pipeline-check diagnostic.
+
+### UX gaps
+
+- [ ] **R8** Wire `Diagnostic.code.target` into the leaf tooltip. The
+      server publishes the rule's docs URL; we read `code.value` and
+      throw the URL away. Add a docs link at the bottom of the leaf
+      tooltip (set `isTrusted = true` on the `MarkdownString`).
+- [ ] **R9** Status bar item showing critical/high counts. Click
+      reveals the Findings panel.
+- [ ] **R10** Rename `pipelineCheck.findings.refresh` — re-renders
+      from current diagnostics, doesn't trigger a fresh scan. Once
+      scan-workspace lands, have refresh call `scanWorkspace()`.
+- [ ] **R11** `CodeAction` provider for suppression comments.
+      Right-click a finding → "Suppress GHA-001 for this line" that
+      inserts the CLI's suppression syntax.
+- [ ] **R12** "Go to next/previous finding" commands with keybindings.
+- [ ] **R13** Set `Diagnostic.tags` for `Deprecated` /
+      `Unnecessary` where the rule indicates it. Server-side change.
+
+### Architecture
+
+- [ ] **R14** Extract the candidate-file pattern list from
+      `activationEvents`, `documentSelector`, and (post-merge)
+      `SCAN_PATTERNS` into a single shared TS module. Today the list
+      lives in three places.
+- [ ] **R15** Add `onCommand:pipelineCheck.scanWorkspace` to
+      `activationEvents` so opening an isolated file from outside the
+      workspace can still trigger activation.
+- [ ] **R16** Client-side structured logging into the output channel
+      with a `[client]` prefix. Breadcrumbs for bug reports.
+
+### Testing
+
+- [ ] **R17** `@vscode/test-electron` integration tests covering real
+      LSP publish and tree render.
+- [ ] **R18** Extract the `vi.mock("vscode", ...)` factory into a
+      shared `src/__testStubs__/vscode.ts`.
+
+### Marketplace
+
+- [ ] **R19** **Ship the screenshots** the HTML comment at
+      [README.md:13-25](README.md#L13-L25) has been waiting for since
+      v0.1.0. Highest-leverage marketplace conversion improvement.
+- [ ] **R20** CI check that `package.json#description` stays ≤ 145
+      characters (the marketplace-search truncation limit).
+
+### CI / release
+
+- [ ] **R21** Test matrix:
+      `[ubuntu-latest, windows-latest, macos-latest]`. The
+      `LF → CRLF` warnings on every git operation hint at the bugs.
+- [ ] **R22** Finish the eslint flat-config migration so the
+      drift between eslint v8 and TS 6 / esbuild 0.28 stops widening.
+- [ ] **R23** Resolve the CodeQL default-setup conflict — disable
+      default setup or delete codeql.yml. Don't ship with a
+      permanently-red required check.
+- [ ] **R24** `vsce publish --pre-release` channel for the next
+      minor bump.
+
+### Strategic
+
+- [ ] **R25** Per-provider toggles in settings.
+- [ ] **R26** Inline `CodeLens` summarising findings per file.
+- [ ] **R27** Workspace-level config file shared with the CLI.
+- [ ] **R28** Opt-in telemetry (`vscode.env.isTelemetryEnabled`).
+- [ ] **R29** Scan-on-save mode.
