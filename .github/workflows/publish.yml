@@ -25,16 +25,29 @@ on:
         required: true
         type: string
 
+# Workflow default is read-only; the publish job widens to
+# `contents: write` for the GitHub release step. GitHub Actions doesn't
+# support step-level permissions, so this is the tightest scope
+# available without splitting into two jobs.
 permissions:
-  contents: write   # creating the GitHub release
+  contents: read
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Gate the job on the `production` GitHub Environment so VSCE_PAT
+    # and OVSX_PAT are only readable from a run that has cleared
+    # whatever reviewers/branch rules the environment imposes. Anyone
+    # with push access can still fire workflow_dispatch, but the
+    # publish steps will block on the environment gate.
+    environment: production
+    permissions:
+      contents: write   # needed by the "Create GitHub release" step
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0   # needed for the merge-base check below
 
       - uses: actions/setup-node@v4
         with:
@@ -44,9 +57,13 @@ jobs:
       - run: npm ci
 
       - name: Verify tag matches package.json version
+        env:
+          # On tag push GITHUB_REF_NAME is the tag; on workflow_dispatch
+          # it's the dispatching branch, so prefer the explicit input.
+          REF_NAME: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME#v}"
+          tag="${REF_NAME#v}"
           pkg=$(node -p "require('./package.json').version")
           if [ "$tag" != "$pkg" ]; then
             echo "::error::Tag v$tag does not match package.json version $pkg"
@@ -54,17 +71,52 @@ jobs:
           fi
           echo "Tag and package.json agree on version $pkg"
 
+      - name: Verify tag is reachable from main
+        env:
+          REF_NAME: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$REF_NAME" origin/main; then
+            echo "::error::Tag $REF_NAME is not reachable from origin/main — refusing to publish"
+            exit 1
+          fi
+          echo "Tag $REF_NAME is on main"
+
+      - name: Verify CHANGELOG has a section for this version
+        # publish.yml already enforces tag/version parity. This step
+        # closes the matching changelog-fold gap: if the "Unreleased"
+        # entries haven't been moved into a "## [X.Y.Z]" section, the
+        # release-notes extraction below would ship the wrong content.
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          if ! grep -E "^## \[${version}\]" CHANGELOG.md > /dev/null; then
+            echo "::error::CHANGELOG.md is missing a '## [${version}]' section — fold the Unreleased entries before tagging"
+            exit 1
+          fi
+          echo "CHANGELOG section found for ${version}"
+
       - name: Lint
         run: npm run lint
 
       - name: TypeScript compile
         run: npm run compile
 
+      - name: Unit tests
+        run: npm test
+
+      - name: Bundle smoke
+        run: npm run smoke
+
       - name: Package vsix
+        # vsce and ovsx are pinned devDependencies in package.json, so
+        # `npm ci` above installed the exact versions and Dependabot
+        # bumps them via the standard npm config. `npx` here resolves
+        # the local binary — no fresh fetch with PATs in env.
         run: |
           version=$(node -p "require('./package.json').version")
-          npx --yes @vscode/vsce@latest package \
-            --out "pipeline-check-${version}.vsix"
+          npx vsce package --out "pipeline-check-${version}.vsix"
           ls -lh "pipeline-check-${version}.vsix"
           echo "VSIX_PATH=pipeline-check-${version}.vsix" >> $GITHUB_ENV
 
@@ -72,7 +124,7 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
-          npx --yes @vscode/vsce@latest publish \
+          npx vsce publish \
             --packagePath "$VSIX_PATH" \
             --pat "$VSCE_PAT"
 
@@ -80,7 +132,7 @@ jobs:
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: |
-          npx --yes ovsx@latest publish "$VSIX_PATH" \
+          npx ovsx publish "$VSIX_PATH" \
             --pat "$OVSX_PAT"
 
       - name: Create GitHub release

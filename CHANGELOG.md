@@ -11,6 +11,29 @@ commit collapses this section into `## [X.Y.Z] — <date>`.
 
 ### Added
 
+- **Findings panel.** A dedicated activity-bar slot
+  ("Pipeline-Check" — custom inverted-Y pipeline glyph at
+  `media/pipeline-check.svg`) carries a `Findings` tree that
+  re-groups the diagnostics the LSP server has already published.
+  Strictly a re-presentation: never triggers its own scan, so the
+  thin-transport-adapter promise in `extension.ts` stays intact.
+  The activity-bar icon carries a live count badge so "how many
+  findings does this workspace have right now?" is answerable
+  without expanding the panel. Three group modes — severity
+  (default), file, rule — are switched via a `Change Grouping`
+  Quick Pick that marks the active mode with `$(check)`. Each leaf
+  renders as the rule title plus a `RULE · file:LINE` description
+  that drops whichever component is already implied by the parent
+  group; clicking opens the file at the diagnostic range.
+  CRITICAL is rendered as `flame` and HIGH as `error` so the two
+  distinguish in the severity-grouped tree without breaking parity
+  with the editor gutter (which has no "more red than red" state);
+  INFO uses `circle-outline` themed to `descriptionForeground` so
+  it is visibly the quietest row instead of inheriting the default
+  foreground. The welcome state leads with what the extension does
+  rather than what is missing; the diagnostic recovery links sit
+  on a secondary "Not seeing findings?" line.
+
 - **`pipelineCheck.severityThreshold` setting.** A new enum knob
   (`low` / `medium` / `high` / `critical`, default `low`) that mirrors
   the CLI's `--severity-threshold`. Drives a client-side
@@ -24,7 +47,69 @@ commit collapses this section into `## [X.Y.Z] — <date>`.
   unconditionally, so an older server (or a non-pipeline-check
   publish) is never hidden.
 
+### Security
+
+- **`pipelineCheck.serverCommand` and `pipelineCheck.serverArgs` are now
+  `machine-overridable`.** Workspace overrides require an explicit
+  prompt, so a malicious `.vscode/settings.json` can't silently swap
+  the interpreter or inject `-c "<code>"` once the user trusts the
+  workspace.
+- **Declared `capabilities.untrustedWorkspaces: "limited"`** and
+  `virtualWorkspaces: false`. The extension stays inactive in
+  untrusted workspaces until the user trusts them, so the LSP child
+  process never spawns from a freshly-cloned, untrusted repo.
+- **Hardened the publish workflow.** Pinned `@vscode/vsce` and `ovsx`
+  to specific versions (no more `@latest` with PATs in env), added a
+  `git merge-base` check that refuses to publish a tag that isn't on
+  `main`, added a CHANGELOG-fold check, and narrowed workflow-level
+  permissions to `contents: read` with the publish job opting up to
+  `contents: write`. The publish job is gated on the `production`
+  GitHub Environment so `VSCE_PAT` / `OVSX_PAT` are only readable from
+  a run that has cleared required reviewers.
+- **Added [SECURITY.md](SECURITY.md)** with GitHub Private Vulnerability
+  Reporting as the disclosure channel, response SLAs, and a published
+  threat model.
+
+### Tests
+
+- **Vitest unit suite added.** 25 tests covering the severity threshold
+  filter (extracted into [src/severityFilter.ts](src/severityFilter.ts))
+  and the Findings tree's pure logic (collection from
+  diagnostics, group-by-severity / file / rule, severity normalisation,
+  no-refresh-storm contract). `npm test` runs the suite; both ci.yml
+  and publish.yml gate on it. Test files live next to the code they
+  cover and are stripped from the .vsix.
+
+### Fixed
+
+- **The published `.vsix` was missing its runtime dependency.** The
+  previous build emitted `out/extension.js` via `tsc` but excluded
+  `node_modules/` from the package, so `require("vscode-languageclient/node")`
+  threw on activation in a clean install. Now bundled with esbuild into
+  a single `dist/extension.js` (the only JS in the `.vsix`); a CI
+  smoke step ([scripts/smoke.js](scripts/smoke.js)) stubs the `vscode`
+  module, loads the bundle, and asserts `activate` / `deactivate` are
+  exported so this regression class fails the build instead of the user.
+
 ### Changed
+
+- **`npm audit --omit=dev --audit-level=high` now runs on every push to
+  `main`** so advisories filed after a PR has merged still surface.
+- **Activation tightened.** The extension used to activate on every YAML
+  / JSON / Dockerfile / Terraform / Groovy file in any workspace, then
+  rely on the server's content filter to drop unrelated documents.
+  `activationEvents` is now a `workspaceContains:` list of the trigger
+  files we actually scan (`.github/workflows/*`, `.gitlab-ci.yml`,
+  `azure-pipelines.yml`, etc.). The LSP's `documentSelector` is
+  switched from language IDs to matching file-path globs, so the
+  server only sees candidate documents — no more spurious activations
+  on `package.json`, `mkdocs.yml`, or a Helm `values.yaml`.
+- **`@vscode/vsce` and `ovsx` are pinned devDependencies.** Workflows
+  invoke them via the locally-installed binaries (`npx vsce`,
+  `npx ovsx`) after `npm ci`. Versions live in `package-lock.json`
+  and Dependabot's existing npm config keeps them current.
+- **Marketplace metadata polish.** Added `Other` to `categories`,
+  pointed `qna` at the repo Discussions page.
 
 - **Marketplace polish pass.** The `package.json` `description` is
   rewritten so the numbers that differentiate this extension (22

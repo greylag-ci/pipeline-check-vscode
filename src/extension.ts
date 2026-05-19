@@ -18,32 +18,62 @@ import {
   ServerOptions,
   TransportKind,
 } from "vscode-languageclient/node";
+import { FindingsTreeProvider, GroupMode } from "./findingsView";
+
+// Group-mode options offered by the Findings panel's "Change
+// Grouping" button. Labels are user-facing; descriptions are the
+// muted secondary text in the Quick Pick row. The order matches the
+// title-bar history of the radio buttons that this Quick Pick
+// replaces, so muscle memory carries over.
+const GROUPING_PICKS: readonly {
+  readonly mode: GroupMode;
+  readonly label: string;
+  readonly description: string;
+}[] = [
+  {
+    mode: "severity",
+    label: "Severity",
+    description: "Critical, High, Medium, Low, Info",
+  },
+  {
+    mode: "file",
+    label: "File",
+    description: "One bucket per file, ordered by path",
+  },
+  {
+    mode: "rule",
+    label: "Rule",
+    description: "One bucket per check ID (GHA-001, etc.)",
+  },
+];
+
+async function changeGrouping(
+  provider: FindingsTreeProvider,
+): Promise<void> {
+  const current = provider.getGroupMode();
+  type Pick = vscode.QuickPickItem & { mode: GroupMode };
+  const items: Pick[] = GROUPING_PICKS.map((p) => ({
+    // ``$(check)`` prefix marks the active mode. The Quick Pick has
+    // no native "selected option" affordance for show-only-callback
+    // pickers, so we draw the check ourselves — same pattern VS Code
+    // uses for its "Change Language Mode" picker.
+    label: p.mode === current ? `$(check) ${p.label}` : `    ${p.label}`,
+    description: p.description,
+    mode: p.mode,
+  }));
+  const choice = await vscode.window.showQuickPick(items, {
+    title: "Group findings by",
+    placeHolder: "Choose how the panel should bucket findings",
+  });
+  if (choice) {
+    provider.setGroupMode(choice.mode);
+  }
+}
+import { filterByThreshold } from "./severityFilter";
 
 const LANGUAGE_ID = "pipelineCheck";
 const LANGUAGE_NAME = "Pipeline-Check";
 const OUTPUT_CHANNEL = "Pipeline-Check";
-
-// Upstream severity ranks. Higher = more severe. The server stuffs the
-// pipeline-check severity name into Diagnostic.data["severity"] (e.g.
-// "CRITICAL"). The LSP DiagnosticSeverity enum collapses CRITICAL + HIGH
-// into a single Error value, so we can't filter precisely on
-// vscode.Diagnostic.severity alone.
-const SEVERITY_RANK: Record<string, number> = {
-  INFO: 0,
-  LOW: 1,
-  MEDIUM: 2,
-  HIGH: 3,
-  CRITICAL: 4,
-};
-
-// Threshold knob values. Map each to the rank a diagnostic must
-// reach to survive the filter.
-const THRESHOLD_RANK: Record<string, number> = {
-  low: SEVERITY_RANK.LOW,
-  medium: SEVERITY_RANK.MEDIUM,
-  high: SEVERITY_RANK.HIGH,
-  critical: SEVERITY_RANK.CRITICAL,
-};
 
 let client: LanguageClient | undefined;
 
@@ -57,17 +87,28 @@ function buildClient(): LanguageClient {
     debug: { command, args, transport: TransportKind.stdio },
   };
 
-  // The selector matches every file kind a pipeline_check rule reads.
-  // The server further filters by file content + path so an unrelated
-  // YAML file in the workspace (mkdocs.yml, a Helm `values.yaml`, etc.)
-  // does not get false-positive analysis.
+  // Match by path glob instead of language ID. Language-based selectors
+  // would let unrelated YAML files (mkdocs.yml, Helm `values.yaml`,
+  // package.json, etc.) reach the LSP and rely on the server's
+  // content-and-path filter to bounce them. Path-based selectors keep
+  // that filter as a backstop but hand the server only candidate files
+  // in the first place — smaller cross-section, no dependency on whether
+  // the user has the official GitHub Actions extension installed
+  // (which would otherwise hijack the `github-actions-workflow`
+  // language ID for `.github/workflows/*.yml`).
   const clientOptions: LanguageClientOptions = {
     documentSelector: [
-      { scheme: "file", language: "yaml" },
-      { scheme: "file", language: "json" },
-      { scheme: "file", language: "dockerfile" },
-      { scheme: "file", language: "terraform" },
-      { scheme: "file", language: "groovy" },
+      { scheme: "file", pattern: "**/.github/workflows/*.{yml,yaml}" },
+      { scheme: "file", pattern: "**/.gitlab-ci.yml" },
+      { scheme: "file", pattern: "**/azure-pipelines.yml" },
+      { scheme: "file", pattern: "**/bitbucket-pipelines.yml" },
+      { scheme: "file", pattern: "**/.circleci/config.yml" },
+      { scheme: "file", pattern: "**/cloudbuild.yaml" },
+      { scheme: "file", pattern: "**/.buildkite/pipeline.yml" },
+      { scheme: "file", pattern: "**/.drone.{yml,yaml}" },
+      { scheme: "file", pattern: "**/Jenkinsfile" },
+      { scheme: "file", pattern: "**/Dockerfile" },
+      { scheme: "file", pattern: "**/Containerfile" },
     ],
     synchronize: {
       configurationSection: "pipelineCheck",
@@ -86,19 +127,7 @@ function buildClient(): LanguageClient {
         const threshold = vscode.workspace
           .getConfiguration("pipelineCheck")
           .get<string>("severityThreshold", "low");
-        const minRank = THRESHOLD_RANK[threshold] ?? SEVERITY_RANK.LOW;
-        const filtered = diagnostics.filter((diag) => {
-          const data = (diag as vscode.Diagnostic & {
-            data?: { severity?: string };
-          }).data;
-          const name = data?.severity;
-          if (!name) {
-            return true;
-          }
-          const rank = SEVERITY_RANK[name];
-          return rank === undefined || rank >= minRank;
-        });
-        next(uri, filtered);
+        next(uri, filterByThreshold(diagnostics, threshold));
       },
     },
   };
@@ -120,10 +149,10 @@ async function startClient(): Promise<void> {
   }
   client = buildClient();
   // The output channel is created by LanguageClient as a side effect of
-  // construction, so capture it before we drop the broken client on
-  // failure (the "Open server log" action below still needs to focus it
-  // to surface the server's traceback).
-  const outputChannel = client.outputChannel;
+  // construction, so it is always present here. Capture it before we
+  // drop the broken client on failure (the "Open server log" action
+  // below still needs to focus it to surface the server's traceback).
+  const outputChannel: vscode.OutputChannel = client.outputChannel;
   try {
     await client.start();
   } catch (err) {
@@ -145,7 +174,7 @@ async function startClient(): Promise<void> {
         'Copied: pip install "pipeline-check[lsp]"',
       );
     } else if (choice === "Open server log") {
-      outputChannel?.show();
+      outputChannel.show();
     }
     // Drop the broken client so a subsequent restart starts fresh
     // rather than trying to recover from a half-initialised state.
@@ -165,7 +194,29 @@ async function stopClient(): Promise<void> {
 export async function activate(
   context: vscode.ExtensionContext,
 ): Promise<void> {
+  // The Findings tree reads from already-published diagnostics, so we
+  // wire it up before starting the client. That way, if the server
+  // takes a moment to come up (or fails outright), the panel is still
+  // visible and surfaces findings the moment the first publish lands.
+  const findingsProvider = new FindingsTreeProvider(context);
+  const findingsView = vscode.window.createTreeView("pipelineCheck.findings", {
+    treeDataProvider: findingsProvider,
+    showCollapseAll: true,
+  });
+  // Two-phase wiring: the view needs the provider at construction
+  // time, but the provider needs the view to drive its activity-bar
+  // badge. Handing the view back closes the loop and triggers an
+  // initial badge update.
+  findingsProvider.setTreeView(findingsView);
   context.subscriptions.push(
+    findingsView,
+    vscode.commands.registerCommand("pipelineCheck.findings.refresh", () =>
+      findingsProvider.refresh(),
+    ),
+    vscode.commands.registerCommand(
+      "pipelineCheck.findings.changeGrouping",
+      () => changeGrouping(findingsProvider),
+    ),
     vscode.commands.registerCommand("pipelineCheck.restart", async () => {
       await stopClient();
       await startClient();

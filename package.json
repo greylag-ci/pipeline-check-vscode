@@ -14,7 +14,8 @@
     "vscode": "^1.85.0"
   },
   "categories": [
-    "Linters"
+    "Linters",
+    "Other"
   ],
   "keywords": [
     "ci",
@@ -36,16 +37,56 @@
   "bugs": {
     "url": "https://github.com/greylag-ci/pipeline-check-vscode/issues"
   },
+  "qna": "https://github.com/greylag-ci/pipeline-check-vscode/discussions",
   "homepage": "https://github.com/greylag-ci/pipeline-check-vscode#readme",
-  "main": "./out/extension.js",
+  "main": "./dist/extension.js",
   "activationEvents": [
-    "onLanguage:yaml",
-    "onLanguage:json",
-    "onLanguage:dockerfile",
-    "onLanguage:terraform",
-    "onLanguage:groovy"
+    "workspaceContains:**/.github/workflows/*.yml",
+    "workspaceContains:**/.github/workflows/*.yaml",
+    "workspaceContains:**/.gitlab-ci.yml",
+    "workspaceContains:**/azure-pipelines.yml",
+    "workspaceContains:**/bitbucket-pipelines.yml",
+    "workspaceContains:**/.circleci/config.yml",
+    "workspaceContains:**/cloudbuild.yaml",
+    "workspaceContains:**/.buildkite/pipeline.yml",
+    "workspaceContains:**/.drone.yml",
+    "workspaceContains:**/.drone.yaml",
+    "workspaceContains:**/Jenkinsfile",
+    "workspaceContains:**/Dockerfile",
+    "workspaceContains:**/Containerfile"
   ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Pipeline-Check spawns the configured Python interpreter to analyze workflow files. In untrusted workspaces the extension stays inactive until the workspace is trusted."
+    },
+    "virtualWorkspaces": false
+  },
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "pipelineCheck",
+          "title": "Pipeline-Check",
+          "icon": "media/pipeline-check.svg"
+        }
+      ]
+    },
+    "views": {
+      "pipelineCheck": [
+        {
+          "id": "pipelineCheck.findings",
+          "name": "Findings",
+          "contextualTitle": "Pipeline-Check"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "pipelineCheck.findings",
+        "contents": "Pipeline-Check scans CI/CD configurations for OWASP Top 10 CI/CD risks and 14 other compliance frameworks.\n\nOpen a workflow, Dockerfile, or other supported config and findings will appear here.\n\nNot seeing findings on a file you expect to be scanned? [Restart the language server](command:pipelineCheck.restart) or [view the log](command:pipelineCheck.showLog)."
+      }
+    ],
     "commands": [
       {
         "command": "pipelineCheck.restart",
@@ -56,8 +97,44 @@
         "command": "pipelineCheck.showLog",
         "title": "Show language server output",
         "category": "Pipeline-Check"
+      },
+      {
+        "command": "pipelineCheck.findings.refresh",
+        "title": "Refresh",
+        "category": "Pipeline-Check",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "pipelineCheck.findings.changeGrouping",
+        "title": "Change Grouping",
+        "category": "Pipeline-Check",
+        "icon": "$(list-tree)"
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "pipelineCheck.findings.changeGrouping",
+          "when": "view == pipelineCheck.findings",
+          "group": "navigation@1"
+        },
+        {
+          "command": "pipelineCheck.findings.refresh",
+          "when": "view == pipelineCheck.findings",
+          "group": "navigation@9"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "pipelineCheck.findings.refresh",
+          "when": "view == pipelineCheck.findings"
+        },
+        {
+          "command": "pipelineCheck.findings.changeGrouping",
+          "when": "view == pipelineCheck.findings"
+        }
+      ]
+    },
     "configuration": {
       "type": "object",
       "title": "Pipeline-Check",
@@ -65,7 +142,8 @@
         "pipelineCheck.serverCommand": {
           "type": "string",
           "default": "python",
-          "markdownDescription": "Command used to launch the language server. Defaults to `python`; override if `pipeline_check` is installed under a different interpreter (e.g. `python3`, or an absolute path to a virtualenv interpreter)."
+          "scope": "machine-overridable",
+          "markdownDescription": "Command used to launch the language server. Defaults to `python`; override if `pipeline_check` is installed under a different interpreter (e.g. `python3`, or an absolute path to a virtualenv interpreter). An absolute path is recommended — a bare name resolves through `PATH`, which a workspace can manipulate. Scope is `machine-overridable`: workspace overrides require an explicit prompt."
         },
         "pipelineCheck.serverArgs": {
           "type": "array",
@@ -76,7 +154,8 @@
             "-m",
             "pipeline_check.lsp"
           ],
-          "markdownDescription": "Arguments passed to the server command. Default invokes the module via `python -m pipeline_check.lsp`."
+          "scope": "machine-overridable",
+          "markdownDescription": "Arguments passed to the server command. Default invokes the module via `python -m pipeline_check.lsp`. Scope is `machine-overridable`: workspace overrides require an explicit prompt, since arbitrary args can execute arbitrary code (e.g. `-c \"...\"`)."
         },
         "pipelineCheck.severityThreshold": {
           "type": "string",
@@ -103,10 +182,19 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
-    "lint": "eslint src --ext ts"
+    "vscode:prepublish": "npm run typecheck && npm run bundle:prod",
+    "compile": "npm run typecheck && npm run bundle:dev",
+    "typecheck": "tsc -p ./ --noEmit",
+    "bundle:dev": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --sourcemap",
+    "bundle:prod": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --minify",
+    "watch": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --sourcemap --watch",
+    "lint": "eslint src --ext ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "smoke": "node scripts/smoke.js",
+    "package": "vsce package",
+    "publish:vsce": "vsce publish --packagePath",
+    "publish:ovsx": "ovsx publish"
   },
   "dependencies": {
     "vscode-languageclient": "^9.0.1"
@@ -116,7 +204,11 @@
     "@types/vscode": "^1.85.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
+    "@vscode/vsce": "^3.9.1",
+    "esbuild": "^0.25.0",
     "eslint": "^8.56.0",
-    "typescript": "^5.4.0"
+    "ovsx": "^0.10.12",
+    "typescript": "^5.4.0",
+    "vitest": "^4.1.6"
   }
 }
