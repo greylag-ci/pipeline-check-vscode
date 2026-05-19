@@ -17,6 +17,7 @@ permissions:
 
 jobs:
   check:
+    timeout-minutes: 30
     # The extension is cross-platform; the LSP child-process spawn
     # path, the bundle loader, and several file-path helpers are all
     # Windows-sensitive. Running the gate on three OSes catches the
@@ -29,9 +30,15 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          # `persist-credentials: false` keeps the GITHUB_TOKEN out of
+          # `.git/config`'s extraheader. Without it any later `run:` step
+          # can `git config --get http.https://github.com/.extraheader`
+          # to read the token (GHA-037).
+          persist-credentials: false
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
         with:
           node-version: '20'
           cache: 'npm'
@@ -79,12 +86,31 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: npm audit --omit=dev --audit-level=high
 
+      - name: Dogfood — pipeline-check on our own workflows
+        # Run the published pipeline-check action against this repo's
+        # `.github/workflows/`. Catches GHA-rule regressions in our own
+        # CI/release pipeline before they ship, and exercises the tool
+        # end-to-end from the same surface marketplace users invoke.
+        # Linux-only — the action runs once per workspace, not once per
+        # matrix leg. `fail-on: HIGH` gates: HIGH+ findings break the
+        # build; LOW/MEDIUM stay informational so a single style nit
+        # doesn't block contributors.
+        if: matrix.os == 'ubuntu-latest'
+        # Pinned to a specific tag — the upstream action repo doesn't
+        # publish a floating `v1` major tag, so a bare `@v1` reference
+        # fails the actions resolver. Dependabot's github-actions
+        # updater bumps this line on new releases.
+        uses: dmartinochoa/pipeline-check@1df5e768503c886134c70fb517f3234dbfc43aab  # v1.0.5
+        with:
+          pipeline: github
+          fail-on: HIGH
+
       - name: Verify vsix packs cleanly
         # vsce is a pinned devDependency (see package.json) — Dependabot
         # bumps it via the npm config. `npm ci` has already installed it.
         run: npx vsce package --out pipeline-check.vsix
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
         # Single artefact upload from the Linux job; identical-name
         # uploads from the matrix would collide.
         if: matrix.os == 'ubuntu-latest'

@@ -17,6 +17,27 @@ We aim to:
 Credit will be attributed in the release notes and in the CVE record
 (if assigned) unless the reporter prefers anonymity.
 
+## Data collection
+
+**The extension does not collect telemetry.** No usage, error, or
+identity data is sent anywhere. The only network requests the
+extension itself initiates are:
+
+1. **`vscode.env.openExternal(<rule-docs-url>)`** when a user clicks
+   the *Open Rule Documentation* link on a finding. That opens the URL
+   the upstream `pipeline-check` server published as
+   `Diagnostic.code.target` — typically a docs page hosted by the
+   rule's vendor. The link is user-initiated; nothing fires
+   automatically.
+2. **`vscode.env.openExternal(<github-release-url>)`** when a user
+   clicks *See release notes* on the one-time post-upgrade
+   notification. Also user-initiated.
+
+Everything else — diagnostic publishing, scan progress, tree state —
+stays between your editor and the locally-spawned LSP child process.
+No `fetch` to a third-party analytics endpoint, no anonymous-id
+header, no opt-in pixel.
+
 ## Supported versions
 
 Only the latest published version on the

@@ -41,6 +41,7 @@ permissions:
 
 jobs:
   publish:
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     # Gate the job on the `production` GitHub Environment so VSCE_PAT
     # and OVSX_PAT are only readable from a run that has cleared
@@ -51,12 +52,16 @@ jobs:
     permissions:
       contents: write   # needed by the "Create GitHub release" step
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
           ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0   # needed for the merge-base check below
+          # The `gh release create` step below uses an explicit
+          # GH_TOKEN env var, not the persisted credential, so we
+          # can lock the token out of .git/config (GHA-037).
+          persist-credentials: false
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
         with:
           node-version: '20'
           cache: 'npm'

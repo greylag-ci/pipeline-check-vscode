@@ -11,7 +11,8 @@ at the bottom) is two-thirds landed across PRs #11–14.
 |---|---|
 | **v0.1.0 → v0.1.1** | Shipped 2026-05-19. C1–C2, H1–H4, M1–M5, L1–L6 all closed. |
 | **v0.1.1 → v0.2.0 (in flight)** | R1–R9, R12, R14, R16–R18, R20, R21, R24–R26 landed on stacked PRs #11–#14; merge them in order, then tag. |
-| **Blocked** | R10/R15/R29 (need scan-workspace merged), R11 (need suppression-comment syntax), R13/R27 (server-side change), R19 (interactive screenshot session), R22 (eslint-flat-config WIP), R23 (CodeQL setup), R28 (telemetry decision). |
+| **Blocked** | R10/R15/R29 (need scan-workspace merged), R11 (need suppression-comment syntax), R13/R27 (server-side change), R19 (interactive screenshot session), R22 (eslint-flat-config WIP), R23 (CodeQL setup). |
+| **Decided against** | R28 (no telemetry — see SECURITY.md). |
 
 ### Maintainer action items (still outstanding)
 
@@ -500,8 +501,11 @@ inputs (suppression syntax, screenshots) or stacked branches
       file. (PR #13)
 - [ ] **R27** Workspace-level config file (`.pipeline-check.toml`)
       shared with the CLI. *(Needs upstream coordination.)*
-- [ ] **R28** Opt-in telemetry (`vscode.env.isTelemetryEnabled`).
-      *(Privacy-sensitive design decision; deferred pending product
-      direction.)*
+- [x] **R28 — decided against.** No telemetry. For a security-tool
+      audience, "we don't phone home" is a stronger trust signal
+      than the prioritisation value an opt-in pixel would deliver.
+      [SECURITY.md](SECURITY.md) carries the explicit no-telemetry
+      promise so the policy is visible at the security-review
+      surface researchers check first. (Decided 2026-05-19.)
 - [ ] **R29** Scan-on-save mode. *(Depends on scan-workspace
       merging.)*
