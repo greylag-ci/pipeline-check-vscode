@@ -15,6 +15,14 @@ the `production` GitHub Environment.
    environment secrets (not repo secrets). The workflow now references
    `environment: production`; the gate is only as strong as the
    environment's review rules.
+2. **Disable the default CodeQL setup** so the advanced
+   [.github/workflows/codeql.yml](.github/workflows/codeql.yml) (which
+   runs `security-extended`) can upload SARIF. Settings → Code security
+   → Code scanning → "CodeQL analysis" → click "Set up" / settings →
+   switch from "Default" to "Advanced" (or disable default outright).
+   Until this is done, the `analyze` check on PR #1 will fail with
+   "CodeQL analyses from advanced configurations cannot be processed
+   when the default setup is enabled".
 2. **Enable Private Vulnerability Reporting** on the repo (Settings →
    Code security). Without it, the link in [SECURITY.md](SECURITY.md)
    404s and external reporters have nowhere private to file.
