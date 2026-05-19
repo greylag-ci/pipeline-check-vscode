@@ -1,0 +1,27 @@
+version: 2
+
+# Weekly dep bumps. npm covers the extension itself; github-actions
+# keeps the workflow action versions current so we don't drift onto
+# deprecated runners.
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      typescript-eslint:
+        patterns:
+          - '@typescript-eslint/*'
+      types:
+        patterns:
+          - '@types/*'
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
