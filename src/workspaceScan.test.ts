@@ -10,6 +10,7 @@ import { setLspReady } from "./lspState";
 import {
   findScannableFiles,
   formatSummary,
+  isScanInProgress,
   scanWorkspace,
 } from "./workspaceScan";
 
@@ -310,5 +311,118 @@ describe("scanWorkspace — LSP-not-ready gate", () => {
     expect(result).toEqual({ scanned: 0, failed: 0, cancelled: false });
     expect(globalThis.__stubCalls?.warningMessages ?? []).toEqual([]);
     expect(globalThis.__stubCalls?.infoMessages ?? []).toEqual([]);
+  });
+});
+
+describe("scanWorkspace — in-flight busy guard", () => {
+  // The user-initiated `Pipeline-Check: Scan workspace` and `Refresh
+  // Findings` both call scanWorkspace; a double-click of one (or
+  // scan + refresh in quick succession) used to spawn two concurrent
+  // progress notifications iterating the same URI list. The
+  // module-level guard collapses every concurrent call to one scan.
+
+  beforeEach(() => {
+    globalThis.__stubWorkspaceFolders = [
+      { uri: { toString: () => "file:///r", fsPath: "/r" } },
+    ];
+    globalThis.__stubFindFiles = [
+      { toString: () => "file:///r/Dockerfile", fsPath: "/r/Dockerfile" },
+    ];
+  });
+
+  it("a second concurrent call returns skippedAsBusy without doing work", async () => {
+    // Park openTextDocument on a controllable promise so the first
+    // scan stays in-flight; kick off a second call, observe the
+    // guard.
+    let releaseGate!: () => void;
+    globalThis.__stubOpenTextDocumentGate = new Promise<void>((res) => {
+      releaseGate = res;
+    });
+
+    const first = scanWorkspace();
+    // Yield enough microtasks for findScannableFiles to resolve and
+    // the scanInProgress flag to flip.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(isScanInProgress()).toBe(true);
+
+    const second = await scanWorkspace();
+    expect(second).toEqual({
+      scanned: 0,
+      failed: 0,
+      cancelled: false,
+      skippedAsBusy: true,
+    });
+
+    // Let the first scan complete.
+    releaseGate();
+    const result = await first;
+    expect(result.scanned).toBe(1);
+    expect(isScanInProgress()).toBe(false);
+  });
+
+  it("the second call surfaces an info toast in noisy mode", async () => {
+    let releaseGate!: () => void;
+    globalThis.__stubOpenTextDocumentGate = new Promise<void>((res) => {
+      releaseGate = res;
+    });
+
+    const first = scanWorkspace();
+    await Promise.resolve();
+    await Promise.resolve();
+    await scanWorkspace();
+
+    const infos = globalThis.__stubCalls?.infoMessages ?? [];
+    // The first scan's completion toast hasn't landed yet (it's
+    // blocked on the gate); the only info message at this point
+    // is the busy notice from the second call.
+    expect(infos.some((m) => m.includes("already in progress"))).toBe(true);
+
+    releaseGate();
+    await first;
+  });
+
+  it("quiet mode does NOT surface the busy toast", async () => {
+    // scan-on-save is quiet; a busy notice on every save during a
+    // long scan would paper the screen.
+    let releaseGate!: () => void;
+    globalThis.__stubOpenTextDocumentGate = new Promise<void>((res) => {
+      releaseGate = res;
+    });
+
+    const first = scanWorkspace();
+    await Promise.resolve();
+    await Promise.resolve();
+    await scanWorkspace({ quiet: true });
+
+    const infos = globalThis.__stubCalls?.infoMessages ?? [];
+    expect(infos.some((m) => m.includes("already in progress"))).toBe(false);
+
+    releaseGate();
+    await first;
+  });
+
+  it("releases the busy flag on the finally path even if withProgress throws", async () => {
+    // The finally is the only thing standing between a thrown
+    // progress task and a permanently-locked guard. Force a throw
+    // by making openTextDocument reject for the only file.
+    globalThis.__stubOpenTextDocumentFailures = new Set([
+      "file:///r/Dockerfile",
+    ]);
+    await scanWorkspace();
+    expect(isScanInProgress()).toBe(false);
+  });
+
+  it("the precondition bails (no folders, LSP not ready, no files) do NOT lock the flag", async () => {
+    // None of these branches did real work — they shouldn't lock
+    // out a legitimate scan that follows immediately.
+    setLspReady(false);
+    await scanWorkspace();
+    expect(isScanInProgress()).toBe(false);
+    setLspReady(true);
+
+    globalThis.__stubFindFiles = [];
+    await scanWorkspace();
+    expect(isScanInProgress()).toBe(false);
   });
 });

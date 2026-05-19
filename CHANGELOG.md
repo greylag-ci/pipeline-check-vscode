@@ -13,6 +13,31 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed (round 2: medium-severity batch)
+
+- **Two scan-workspace runs in parallel no longer spawn two
+  notifications.** A module-level in-flight guard collapses every
+  concurrent `scanWorkspace` caller to one scan. A second call (from
+  a double-clicked button, or scan + refresh) returns immediately
+  with `skippedAsBusy: true` and, in noisy mode, surfaces a
+  "scan already in progress" info toast.
+- **`installInTerminal` reuses the existing "Pipeline-Check install"
+  terminal.** Repeated clicks on the welcome-panel CTA used to stack
+  identical terminals in the dropdown. Now the second click reuses
+  the live terminal; an exited terminal is treated as dead and a
+  fresh one takes its place.
+- **`scan-on-save` short-circuits when the saved file's provider is
+  disabled.** Saving a Dockerfile in a workspace that has
+  `dockerfile` in `pipelineCheck.disabledProviders` used to trigger
+  a full workspace re-open even though every published diagnostic
+  would be dropped by the middleware. The handler now consults the
+  live `disabledProviders` setting and skips the scan.
+- **`whatsNew` rc → ga transition is no longer silently swallowed.**
+  Per semver §11 a pre-release version is LOWER precedence than the
+  corresponding release. The previous version-compare stripped the
+  suffix and treated `1.0.0-rc.1` and `1.0.0` as equal, so
+  pre-release testers never saw the "What's New" toast for the GA.
+
 ### Fixed
 
 - **Welcome panel stops lying after an LSP crash.** Subscribe to

@@ -18,27 +18,45 @@ const STATE_KEY = "pipelineCheck.lastSeenVersion";
 /**
  * Compare two semver strings — returns true if `next` is later than
  * `prev`, false otherwise (including equal). Tolerates undefined /
- * malformed prev (treated as "older than anything"). Strips
- * pre-release suffixes (`-rc.1`) to keep the comparison about the
- * semver core.
+ * malformed prev (treated as "older than anything").
+ *
+ * Pre-release semantics (per semver §11): a pre-release version is
+ * LOWER precedence than the corresponding release. So
+ * `1.0.0-rc.1` < `1.0.0`. Without this distinction, a user who ran
+ * `1.0.0-rc.1` would never see the "What's New" toast for the
+ * actual `1.0.0` GA — both core triples are equal, and a naive
+ * triple-only compare would return false. The toast skipping the
+ * GA is the worst possible time to skip it.
  */
 export function isUpgrade(prev: string | undefined, next: string): boolean {
   if (!prev) return true;
-  const parse = (v: string) =>
-    v
-      .replace(/^v/, "")
-      .split("-")[0]
-      .split(".")
-      .map((s) => parseInt(s, 10) || 0);
-  const a = parse(prev);
-  const b = parse(next);
+  const parsed = (v: string) => {
+    const stripped = v.replace(/^v/, "");
+    const [core, pre] = stripped.split("-", 2);
+    return {
+      triple: core.split(".").map((s) => parseInt(s, 10) || 0),
+      // Empty string is a normal release; any non-empty suffix is a
+      // pre-release (rc.N, alpha.N, beta.N, etc.).
+      prerelease: pre ?? "",
+    };
+  };
+  const a = parsed(prev);
+  const b = parsed(next);
   for (let i = 0; i < 3; i++) {
-    const av = a[i] ?? 0;
-    const bv = b[i] ?? 0;
+    const av = a.triple[i] ?? 0;
+    const bv = b.triple[i] ?? 0;
     if (bv > av) return true;
     if (bv < av) return false;
   }
-  return false;
+  // Same core triple. Resolve via pre-release per semver §11:
+  //   - prev has pre-release, next does not   → upgrade (rc → ga)
+  //   - prev no pre-release, next has one     → not an upgrade (ga → rc)
+  //   - both have pre-release  → lexicographic compare on the suffix
+  //                              ("rc.1" < "rc.2")
+  //   - both same / both empty → equal, not an upgrade
+  if (a.prerelease && !b.prerelease) return true;
+  if (!a.prerelease && b.prerelease) return false;
+  return b.prerelease > a.prerelease;
 }
 
 /**
