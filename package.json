@@ -276,6 +276,11 @@
           "default": true,
           "markdownDescription": "Show the `Pipeline-Check: N critical · M high` summary CodeLens at the top of each scanned file. Turn off if you find the line-1 lens intrusive — the editor gutter, the Findings panel, and the status bar still surface the same counts."
         },
+        "pipelineCheck.scanOnSave": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Re-scan the whole workspace whenever you save a CI/CD config file. Useful when one file references another (a Jenkinsfile sharing a library, GHA workflows that reuse a composite action) and a fix in one file should re-evaluate findings in the others. Renders as a status-bar spinner — no toast. Off by default; the LSP already re-scans the saved file itself on `didSave`, so this is purely about catching cross-file effects in files that aren't currently open."
+        },
         "pipelineCheck.severityThreshold": {
           "type": "string",
           "enum": [
@@ -307,7 +312,7 @@
     "bundle:dev": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --sourcemap",
     "bundle:prod": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --minify",
     "watch": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --sourcemap --watch",
-    "lint": "eslint src --ext ts",
+    "lint": "eslint src",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration:compile": "tsc -p tsconfig.integration.json",
@@ -324,13 +329,13 @@
     "@types/mocha": "^10.0.10",
     "@types/node": "^25.9.0",
     "@types/vscode": "^1.85.0",
-    "@typescript-eslint/eslint-plugin": "^8.59.4",
-    "@typescript-eslint/parser": "^8.59.4",
+    "@eslint/js": "^9.0.0",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.9.1",
     "esbuild": "^0.28.0",
-    "eslint": "^8.56.0",
+    "eslint": "^9.0.0",
+    "typescript-eslint": "^8.0.0",
     "mocha": "^11.7.5",
     "ovsx": "^0.10.12",
     "typescript": "^6.0.3",

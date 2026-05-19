@@ -11,6 +11,7 @@ out-test/**
 ROADMAP.md
 .gitignore
 .eslintrc.json
+eslint.config.mjs
 .vscode-test.mjs
 tsconfig.json
 tsconfig.integration.json

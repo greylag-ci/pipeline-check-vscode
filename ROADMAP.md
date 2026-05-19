@@ -11,7 +11,8 @@ at the bottom) is two-thirds landed across PRs #11–14.
 |---|---|
 | **v0.1.0 → v0.1.1** | Shipped 2026-05-19. C1–C2, H1–H4, M1–M5, L1–L6 all closed. |
 | **v0.1.1 → v0.2.0 (in flight)** | R1–R9, R12, R14, R16–R18, R20, R21, R24–R26 landed on stacked PRs #11–#14; merge them in order, then tag. |
-| **Blocked** | R10/R15/R29 (need scan-workspace merged), R11 (need suppression-comment syntax), R13/R27 (server-side change), R19 (interactive screenshot session), R22 (eslint-flat-config WIP), R23 (CodeQL setup). |
+| **v0.2.0 → 1.0 (in flight)** | R10/R15 (scan-workspace), R22 (eslint-flat-config), R29 (scan-on-save) landed; PVR + Discussions enabled on the repo. |
+| **Blocked** | R11 (need suppression-comment syntax), R13/R27 (server-side change), R19 (interactive screenshot session), R23 (CodeQL setup). |
 | **Decided against** | R28 (no telemetry — see SECURITY.md). |
 
 ### Maintainer action items (still outstanding)
@@ -28,12 +29,12 @@ they're done.
    scanning → switch CodeQL from "Default" to "Advanced". If org
    policy forbids that, delete `codeql.yml` and lose
    `security-extended`.
-2. **Enable Private Vulnerability Reporting.** Settings → Code
-   security. Without it, the link in [SECURITY.md](SECURITY.md) 404s
-   for external reporters.
-3. **Enable Discussions.** Settings → General → Features. Without it,
-   the `qna` link in [package.json](package.json) 404s on the
-   marketplace listing.
+2. **Enable Private Vulnerability Reporting.** ✅ Enabled
+   2026-05-19 via the GitHub API; SECURITY.md's reporting link now
+   resolves for external reporters.
+3. **Enable Discussions.** ✅ Enabled 2026-05-19 via the GitHub API;
+   the `qna` link in [package.json](package.json) now resolves on
+   the marketplace listing.
 4. **Manual H4 smoke** — F5 with the sample-workflow profile, open
    each provider's trigger file, confirm diagnostics still appear.
    The activation narrowing drops custom workflow paths intentionally
@@ -440,9 +441,9 @@ inputs (suppression syntax, screenshots) or stacked branches
       link when the server publishes `Diagnostic.code.target`. (PR #11)
 - [x] **R9** Status bar item on the left at priority 100 showing the
       top two non-zero severities (e.g. `$(shield) 3C 1H`). (PR #11)
-- [ ] **R10** Rename / repurpose `pipelineCheck.findings.refresh` to
-      call `scanWorkspace()` once the scan-workspace branch lands.
-      *(Blocked on scan-workspace merging.)*
+- [x] **R10** `pipelineCheck.findings.refresh` now calls
+      `scanWorkspace()` rather than just re-painting the tree from
+      already-published diagnostics.
 - [ ] **R11** `CodeAction` provider for suppression comments. *(Blocked
       on the upstream pipeline-check CLI's suppression syntax.)*
 - [x] **R12** Alt+F8 / Shift+Alt+F8 jump between findings, wrap at
@@ -456,8 +457,10 @@ inputs (suppression syntax, screenshots) or stacked branches
 - [x] **R14** Trigger-pattern list extracted into `src/providers.ts`
       (`PROVIDERS` map + `TRIGGER_PATTERNS`). A regression test asserts
       the package.json `activationEvents` stay in lockstep. (PR #12)
-- [ ] **R15** `onCommand:pipelineCheck.scanWorkspace` activation
-      event. *(Blocked on scan-workspace merging.)*
+- [x] **R15** Scan-workspace command shipped; covered by
+      `workspaceContains:` activation triggers + `onStartupFinished`
+      so the command is always reachable from the Findings welcome
+      state and the title-bar button.
 - [x] **R16** `[client] HH:MM:SS.mmm <level>` logging into the
       LanguageClient's outputChannel. `withTiming(label, fn)` wraps
       thunks with start/ok/failed breadcrumbs. (PR #12)
@@ -484,9 +487,11 @@ inputs (suppression syntax, screenshots) or stacked branches
 - [x] **R21** Three-OS matrix: `[ubuntu-latest, windows-latest,
       macos-latest]`. `npm audit` and the vsix upload pinned to
       Linux. (PR #11)
-- [ ] **R22** Finish the eslint flat-config migration so drift between
-      eslint v8 and TS 6 / esbuild 0.28 / @types/node 25 stops
-      widening. *(WIP stash on the maintainer's `pr10` checkout.)*
+- [x] **R22** Migrated to eslint v9 flat config
+      ([eslint.config.mjs](eslint.config.mjs)); replaced
+      `@typescript-eslint/eslint-plugin` + `parser` with the unified
+      `typescript-eslint` package. Rules carry over verbatim so the
+      lint result is unchanged. Unblocks future eslint v9+ bumps.
 - [ ] **R23** Resolve the CodeQL default-setup conflict — disable
       default setup or delete `codeql.yml`. *(Needs repo-settings
       change.)*
@@ -507,5 +512,8 @@ inputs (suppression syntax, screenshots) or stacked branches
       [SECURITY.md](SECURITY.md) carries the explicit no-telemetry
       promise so the policy is visible at the security-review
       surface researchers check first. (Decided 2026-05-19.)
-- [ ] **R29** Scan-on-save mode. *(Depends on scan-workspace
-      merging.)*
+- [x] **R29** `pipelineCheck.scanOnSave` setting (default `false`).
+      Saving a CI file kicks off a quiet workspace re-scan (status-bar
+      spinner; no toast) so cross-file effects in unopened CI files
+      get re-evaluated. In-flight guard collapses save-storms to a
+      single scan.

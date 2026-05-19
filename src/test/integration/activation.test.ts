@@ -79,6 +79,8 @@ suite("Pipeline-Check — activation", () => {
       "serverArgs",
       "severityThreshold",
       "disabledProviders",
+      "codeLens.enabled",
+      "scanOnSave",
       "trace.server",
     ]) {
       const info = config.inspect(key);
