@@ -19,6 +19,8 @@ import {
   TransportKind,
 } from "vscode-languageclient/node";
 import { FindingsTreeProvider, GroupMode } from "./findingsView";
+import { filterByThreshold } from "./severityFilter";
+import { registerStatusBar } from "./statusBar";
 
 // Group-mode options offered by the Findings panel's "Change
 // Grouping" button. Labels are user-facing; descriptions are the
@@ -69,8 +71,6 @@ async function changeGrouping(
     provider.setGroupMode(choice.mode);
   }
 }
-import { filterByThreshold } from "./severityFilter";
-
 const LANGUAGE_ID = "pipelineCheck";
 const LANGUAGE_NAME = "Pipeline-Check";
 const OUTPUT_CHANNEL = "Pipeline-Check";
@@ -182,13 +182,34 @@ async function startClient(): Promise<void> {
   }
 }
 
+// Hard ceiling on how long deactivate / restart waits for the LSP
+// child to shut down cleanly. A deadlocked server would otherwise
+// hold the deactivate path indefinitely and VS Code reports "Window
+// not responding".
+const STOP_TIMEOUT_MS = 2000;
+
 async function stopClient(): Promise<void> {
   if (!client) {
     return;
   }
   const local = client;
   client = undefined;
-  await local.stop();
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      local.stop(),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, STOP_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+    // If stop() didn't win the race the client is stranded; dispose
+    // explicitly so its subscriptions don't outlive us.
+    local.dispose?.();
+  }
 }
 
 export async function activate(
@@ -208,6 +229,10 @@ export async function activate(
   // badge. Handing the view back closes the loop and triggers an
   // initial badge update.
   findingsProvider.setTreeView(findingsView);
+  // Status bar item lives at the bottom-left and shows the per-
+  // severity tally. Click reveals the Findings panel. registerStatusBar
+  // pushes the item onto context.subscriptions internally.
+  registerStatusBar(context);
   context.subscriptions.push(
     findingsView,
     vscode.commands.registerCommand("pipelineCheck.findings.refresh", () =>
@@ -220,7 +245,12 @@ export async function activate(
     vscode.commands.registerCommand("pipelineCheck.restart", async () => {
       await stopClient();
       await startClient();
-      vscode.window.showInformationMessage("Language server restarted.");
+      // Only confirm success when startClient left a live client behind.
+      // If start failed it surfaced its own error toast; we'd otherwise
+      // show "failed to start" and "restarted" at the same time.
+      if (client) {
+        vscode.window.showInformationMessage("Language server restarted.");
+      }
     }),
     vscode.commands.registerCommand("pipelineCheck.showLog", () => {
       if (client?.outputChannel) {

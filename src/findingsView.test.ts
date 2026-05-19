@@ -49,7 +49,13 @@ vi.mock("vscode", () => {
     ) {}
   }
   class MarkdownString {
-    constructor(public readonly value: string) {}
+    isTrusted = false;
+    supportThemeIcons = false;
+    constructor(public value: string) {}
+    appendMarkdown(s: string): this {
+      this.value += s;
+      return this;
+    }
   }
   const Uri = {
     parse: (s: string) => {
@@ -75,9 +81,26 @@ vi.mock("vscode", () => {
         uri.fsPath ?? uri.path ?? "",
     },
     languages: {
-      getDiagnostics: () =>
-        (globalThis as { __stubDiagnostics?: unknown[] }).__stubDiagnostics ??
-        [],
+      // Two call shapes:
+      //   - `getDiagnostics()` returns every [uri, diagnostic[]] pair
+      //   - `getDiagnostics(uri)` returns just that uri's diagnostics
+      // The provider's batch-skip path uses the second form; the
+      // collection path uses the first.
+      getDiagnostics: (uri?: { toString: () => string }) => {
+        const all =
+          (
+            globalThis as {
+              __stubDiagnostics?: Array<[
+                { toString: () => string },
+                unknown[],
+              ]>;
+            }
+          ).__stubDiagnostics ?? [];
+        if (uri === undefined) return all;
+        const key = uri.toString();
+        const match = all.find(([u]) => u.toString() === key);
+        return match ? match[1] : [];
+      },
       onDidChangeDiagnostics: () => ({ dispose: () => undefined }),
     },
     commands: { executeCommand: () => Promise.resolve() },
@@ -99,6 +122,7 @@ type FakeFinding = {
   rule: string;
   severity?: string;
   line?: number;
+  docsUrl?: string;
 };
 
 function setStubDiagnostics(findings: FakeFinding[]): void {
@@ -109,7 +133,10 @@ function setStubDiagnostics(findings: FakeFinding[]): void {
     arr.push({
       source: "pipeline-check",
       message: `${f.rule} title\n\nThe long description.\n\nFix: do X.`,
-      code: { value: f.rule, target: { toString: () => "" } },
+      code: {
+        value: f.rule,
+        target: { toString: () => f.docsUrl ?? "" },
+      },
       range: {
         start: { line: f.line ?? 0, character: 0 },
         end: { line: f.line ?? 0, character: 0 },
@@ -479,5 +506,83 @@ describe("FindingsTreeProvider — group mode behaviour", () => {
     expect(p.getGroupMode()).toBe("rule");
     p.setGroupMode("file");
     expect(p.getGroupMode()).toBe("file");
+  });
+});
+
+describe("FindingsTreeProvider — rule docs link in tooltip", () => {
+  // When the server publishes ``Diagnostic.code.target`` (the rule's
+  // documentation URL), the leaf tooltip should carry a clickable
+  // "Read more" link below the message body. When the URL is absent
+  // or empty, the tooltip is just the message. The link target is
+  // exactly what the server published — we don't synthesise URLs.
+
+  it("appends a docs link when the server publishes one", () => {
+    setStubDiagnostics([
+      {
+        file: "a.yml",
+        rule: "GHA-001",
+        severity: "HIGH",
+        docsUrl: "https://example.com/rules/gha-001",
+      },
+    ]);
+    const p = new FindingsTreeProvider(ctx);
+    p.setGroupMode("severity");
+    const roots = p.getChildren();
+    const leaves = p.getChildren(roots[0]);
+    const item = p.getTreeItem(leaves[0]);
+    const tip = item.tooltip as { value: string; isTrusted: boolean };
+    expect(tip.value).toContain("GHA-001 title");
+    expect(tip.value).toContain(
+      "[$(book) GHA-001 documentation](https://example.com/rules/gha-001)",
+    );
+    expect(tip.isTrusted).toBe(true);
+  });
+
+  it("leaves the tooltip clean when the server publishes no URL", () => {
+    setStubDiagnostics([
+      {
+        file: "a.yml",
+        rule: "GHA-001",
+        severity: "HIGH",
+        // no docsUrl
+      },
+    ]);
+    const p = new FindingsTreeProvider(ctx);
+    p.setGroupMode("severity");
+    const roots = p.getChildren();
+    const leaves = p.getChildren(roots[0]);
+    const item = p.getTreeItem(leaves[0]);
+    const tip = item.tooltip as { value: string };
+    expect(tip.value).toContain("GHA-001 title");
+    expect(tip.value).not.toContain("documentation");
+  });
+});
+
+describe("FindingsTreeProvider — findings cache invalidation", () => {
+  // refresh() drops the cached findings list so the next render sees
+  // any new diagnostic publishes. Without invalidation, a freshly
+  // published finding wouldn't appear in the tree until the user
+  // toggled the group mode or restarted VS Code. The test exercises
+  // the path end-to-end: render once, swap the stub data, refresh,
+  // render again.
+
+  it("refresh() picks up newly-published diagnostics", () => {
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "HIGH" },
+    ]);
+    const p = new FindingsTreeProvider(ctx);
+    p.setGroupMode("severity");
+    expect(p.getChildren()).toHaveLength(1);
+
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "HIGH" },
+      { file: "b.yml", rule: "GHA-002", severity: "CRITICAL" },
+    ]);
+    // Without refresh() the second publish would be invisible.
+    p.refresh();
+    const roots = p.getChildren();
+    expect(roots).toHaveLength(2);
+    // CRITICAL is leftmost in the sort.
+    expect(roots[0].kind === "group" && roots[0].label).toBe("CRITICAL");
   });
 });

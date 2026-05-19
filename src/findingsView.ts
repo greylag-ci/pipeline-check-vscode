@@ -71,6 +71,10 @@ type Finding = {
   readonly diagnostic: vscode.Diagnostic;
   readonly severity: SeverityName;
   readonly ruleId: string;
+  // The rule's documentation URL, when the server published one via
+  // ``Diagnostic.code.target``. Used to render a "Read more" link in
+  // the leaf tooltip — same prose the CLI's `--explain` shows.
+  readonly docsUrl: string | undefined;
 };
 
 type GroupNode = {
@@ -103,14 +107,30 @@ export class FindingsTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   // makes the pre-wiring window explicit — refresh() called before
   // setTreeView simply skips the badge update.
   private treeView: vscode.TreeView<TreeNode> | undefined;
+  // Memoised result of ``collectFindings()``. A single refresh used to
+  // walk the global diagnostic store twice (once from buildRoot, once
+  // from updateBadge); now both paths read from this cache and one
+  // walk is enough. ``refresh()`` invalidates by setting it to null.
+  private cachedFindings: Finding[] | null = null;
+  // URIs that carried a pipeline-check diagnostic at the last refresh.
+  // Used to detect *clears*: when a URI in this set shows up in an
+  // onDidChangeDiagnostics batch with no remaining pipeline-check
+  // diagnostic, we still need to refresh so the stale leaf vanishes.
+  private lastFindingUris = new Set<string>();
 
   constructor(context: vscode.ExtensionContext) {
     // VS Code does not expose a per-source filter on the diagnostic-
-    // change event, so we re-render on every publish. collectFindings
-    // re-filters by source, so the rendered tree only changes when a
-    // pipeline-check publish actually arrives.
+    // change event, so we have to subscribe to all of them and bounce
+    // the ones we don't care about. We DO get the list of changed URIs
+    // on the event, so the early-out below skips the tree rebuild when
+    // no pipeline-check publish landed in this batch — keystroke-rate
+    // ESLint / mypy / redhat.yaml chatter no longer wakes us up.
     context.subscriptions.push(
-      vscode.languages.onDidChangeDiagnostics(() => this.refresh()),
+      vscode.languages.onDidChangeDiagnostics((e) => {
+        if (this.batchTouchesUs(e.uris)) {
+          this.refresh();
+        }
+      }),
     );
     // Seed the context key the title-bar menu reads to highlight the
     // active group mode. Must run after the view is registered to
@@ -146,8 +166,47 @@ export class FindingsTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   }
 
   refresh(): void {
+    // Drop the memo so the next read sees the fresh diagnostics.
+    this.cachedFindings = null;
     this._onDidChangeTreeData.fire();
     this.updateBadge();
+  }
+
+  /**
+   * Cached accessor used everywhere a refresh path needs the current
+   * findings. Walks the workspace diagnostic store once per refresh
+   * instead of once per consumer, and rebuilds the "URIs we had
+   * findings for" set so the next batch-skip check has fresh data.
+   */
+  private findings(): Finding[] {
+    if (this.cachedFindings === null) {
+      this.cachedFindings = collectFindings();
+      this.lastFindingUris = new Set(
+        this.cachedFindings.map((f) => f.uri.toString()),
+      );
+    }
+    return this.cachedFindings;
+  }
+
+  /**
+   * Returns true if any of the changed URIs in this batch either
+   * carries a pipeline-check diagnostic right now (publish or update)
+   * or carried one at the last refresh (clear). The second branch is
+   * what stops a stale leaf from outliving a cleared file.
+   */
+  private batchTouchesUs(uris: readonly vscode.Uri[]): boolean {
+    for (const uri of uris) {
+      if (this.lastFindingUris.has(uri.toString())) {
+        return true;
+      }
+      const diags = vscode.languages.getDiagnostics(uri);
+      for (const d of diags) {
+        if (d.source === DIAGNOSTIC_SOURCE) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   getTreeItem(node: TreeNode): vscode.TreeItem {
@@ -189,7 +248,7 @@ export class FindingsTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     );
     item.iconPath = SEVERITY_ICON[f.severity];
     item.description = composeLeafDescription(f, this.groupMode);
-    item.tooltip = new vscode.MarkdownString(f.diagnostic.message);
+    item.tooltip = composeLeafTooltip(f);
     item.command = {
       command: "vscode.open",
       title: "Reveal finding",
@@ -207,7 +266,7 @@ export class FindingsTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   }
 
   private buildRoot(): TreeNode[] {
-    const all = collectFindings();
+    const all = this.findings();
     if (all.length === 0) {
       return [];
     }
@@ -225,7 +284,7 @@ export class FindingsTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     if (!this.treeView) {
       return;
     }
-    const total = collectFindings().length;
+    const total = this.findings().length;
     this.treeView.badge =
       total === 0
         ? undefined
@@ -246,6 +305,23 @@ export class FindingsTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 //
 // The ``file.yml:23`` form mirrors what compilers emit and what
 // VS Code's status bar uses — familiar at a glance.
+function composeLeafTooltip(f: Finding): vscode.MarkdownString {
+  // The server composes the message as "title\n\ndescription\n\nFix: ...".
+  // Markdown renders the paragraph rhythm; we append a docs link
+  // below it when the server published one. The MarkdownString must
+  // be ``isTrusted = true`` for the link to be clickable inside a
+  // TreeItem tooltip.
+  const md = new vscode.MarkdownString(f.diagnostic.message);
+  if (f.docsUrl) {
+    md.appendMarkdown(
+      `\n\n[$(book) ${f.ruleId || "Rule"} documentation](${f.docsUrl})`,
+    );
+  }
+  md.isTrusted = true;
+  md.supportThemeIcons = true;
+  return md;
+}
+
 function composeLeafDescription(f: Finding, mode: GroupMode): string {
   const line = f.diagnostic.range.start.line + 1;
   const fileRef = `${basenameFromUri(f.uri)}:${line}`;
@@ -278,10 +354,29 @@ function collectFindings(): Finding[] {
         diagnostic: diag,
         severity: readSeverity(diag),
         ruleId: readRuleId(diag),
+        docsUrl: readDocsUrl(diag),
       });
     }
   }
   return out;
+}
+
+function readDocsUrl(diag: vscode.Diagnostic): string | undefined {
+  // ``Diagnostic.code.target`` is the rule's documentation URL when
+  // ``codeDescription.href`` is set on the server side. We surface it
+  // as a "Read more" link in the leaf tooltip so the editor closes
+  // the loop on the marketplace copy that promises "hover descriptions
+  // with --explain prose". Anything not a URL-shaped object falls
+  // through and the link is just omitted from the tooltip.
+  if (
+    diag.code &&
+    typeof diag.code === "object" &&
+    "target" in diag.code &&
+    diag.code.target
+  ) {
+    return diag.code.target.toString();
+  }
+  return undefined;
 }
 
 function readSeverity(diag: vscode.Diagnostic): SeverityName {
@@ -354,17 +449,23 @@ function groupBySeverity(findings: readonly Finding[]): GroupNode[] {
 }
 
 function groupByFile(findings: readonly Finding[]): GroupNode[] {
-  const buckets = new Map<string, Finding[]>();
+  // Key the bucket on the stringified URI so a Map keeps stable lookup
+  // (vscode.Uri values from different findings can be distinct objects
+  // even when they point at the same file), but also store the original
+  // Uri so we don't have to parse it back out for the group node.
+  const buckets = new Map<string, { uri: vscode.Uri; items: Finding[] }>();
   for (const f of findings) {
     const key = f.uri.toString();
-    const arr = buckets.get(key) ?? [];
-    arr.push(f);
-    buckets.set(key, arr);
+    const bucket = buckets.get(key);
+    if (bucket) {
+      bucket.items.push(f);
+    } else {
+      buckets.set(key, { uri: f.uri, items: [f] });
+    }
   }
   return [...buckets]
     .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([key, items]): GroupNode => {
-      const uri = vscode.Uri.parse(key);
+    .map(([, { uri, items }]): GroupNode => {
       items.sort(compareByLocation);
       // Parent dir moves to the tooltip so the description column
       // stays count-only across all three group modes — a uniform
@@ -411,8 +512,11 @@ function groupByRule(findings: readonly Finding[]): GroupNode[] {
 }
 
 function compareByLocation(a: Finding, b: Finding): number {
-  const lhs = a.uri.toString();
-  const rhs = b.uri.toString();
+  // Sort on fsPath instead of the full Uri string so cross-scheme
+  // entries (file:// vs vscode-untitled:// etc.) don't bunch
+  // pathologically at one end. Within the same file, line order wins.
+  const lhs = a.uri.fsPath;
+  const rhs = b.uri.fsPath;
   if (lhs !== rhs) {
     return lhs.localeCompare(rhs);
   }
