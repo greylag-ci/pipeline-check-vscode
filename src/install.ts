@@ -4,7 +4,22 @@
 
 import * as vscode from "vscode";
 
-export const PIP_INSTALL_COMMAND = 'pip install "pipeline-check[lsp]"';
+// `python -m pip install ...` rather than the bare `pip install ...`
+// form for two real-world reasons:
+//   1. On Windows, `pip.exe` can trip a corporate PowerShell
+//      ExecutionPolicy that allows `python.exe` but blocks the
+//      shim script. Using `python -m pip` runs the SAME pip via the
+//      Python interpreter and sidesteps the policy.
+//   2. Users who installed Python via the official installer
+//      sometimes have `python` on PATH but not `pip` (the bin
+//      directory wasn't added). `python -m pip` works as long as
+//      Python itself works.
+// Matches PyPA's own recommendation in the pip documentation. The
+// concrete `python` token also lines up with our default
+// `pipelineCheck.serverCommand`, so the LSP and the install path
+// target the same interpreter unless the user has reconfigured.
+export const PIP_INSTALL_COMMAND =
+  'python -m pip install "pipeline-check[lsp]"';
 
 const TERMINAL_NAME = "Pipeline-Check install";
 const CONFIRM_TTL_MS = 2500;

@@ -13,6 +13,26 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Install command now uses `python -m pip install`.** Switched from
+  the bare `pip install` form so the install path works under two
+  conditions that previously broke it: a corporate Windows
+  PowerShell ExecutionPolicy that allows `python.exe` but blocks
+  `pip.exe`, and the case where `python` is on `PATH` but `pip` is
+  not (common with the official Windows Python installer when the
+  Scripts directory wasn't added). Matches PyPA's own
+  recommendation. README and welcome-panel copy updated.
+
+### Fixed (round 3: low-severity batch)
+
+- **Status-bar relevance latch releases on folder removal.** A
+  multi-root workspace user who removed the last CI folder used to
+  see the bar item pinned to "clean" for the rest of the session.
+  The latch now re-evaluates on `onDidChangeWorkspaceFolders`: when
+  the workspace has no CI candidate files AND no current findings,
+  the item hides again. Re-adding a CI folder re-shows.
+
 ### Fixed (round 2: medium-severity batch)
 
 - **Two scan-workspace runs in parallel no longer spawn two

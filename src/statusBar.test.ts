@@ -393,7 +393,91 @@ describe("registerStatusBar — visibility latch", () => {
     registerStatusBar(localCtx);
     await tick();
     // The returned item itself + the onDidChangeDiagnostics disposable
-    // both land here. The item should be one of them.
+    // + the onDidChangeWorkspaceFolders disposable all land here.
     expect(subs.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("registerStatusBar — latch release on folder removal", () => {
+  // The latch needs to BOTH set and unset based on workspace
+  // relevance. The old behaviour latched once and never released —
+  // removing the only CI folder from a multi-root workspace left
+  // the item visible with "clean" for the rest of the session.
+
+  const ctx = {
+    subscriptions: [] as Array<{ dispose?: () => void }>,
+  } as unknown as import("vscode").ExtensionContext;
+
+  function lastItem() {
+    const items = globalThis.__stubCalls?.statusBarItems ?? [];
+    return items[items.length - 1];
+  }
+
+  const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+  /** Fire the onDidChangeWorkspaceFolders event registered listeners. */
+  function fireWorkspaceFoldersChange(): void {
+    const listeners = globalThis.__stubWorkspaceFoldersListeners ?? [];
+    for (const l of listeners) l({ added: [], removed: [] });
+  }
+
+  it("hides the item when the last CI candidate disappears and no diagnostics remain", async () => {
+    // Start latched: workspace has a CI file.
+    globalThis.__stubFindFiles = [uri("/repo/.github/workflows/ci.yml")];
+    globalThis.__stubDiagnostics = [];
+    registerStatusBar(ctx);
+    await tick();
+    expect(lastItem().shown).toBe(true);
+
+    // User removes the only CI folder; sweep now finds nothing.
+    globalThis.__stubFindFiles = [];
+    fireWorkspaceFoldersChange();
+    await tick();
+    expect(lastItem().shown).toBe(false);
+  });
+
+  it("does NOT release when diagnostics are still present (in-flight rebuild guard)", async () => {
+    // A momentary "no candidate files" state during a rebuild
+    // shouldn't hide the bar if there are still findings to report.
+    globalThis.__stubFindFiles = [uri("/repo/.github/workflows/ci.yml")];
+    globalThis.__stubDiagnostics = [
+      [uri("/r/a.yml"), [make("CRITICAL")]],
+    ];
+    registerStatusBar(ctx);
+    await tick();
+    expect(lastItem().shown).toBe(true);
+
+    globalThis.__stubFindFiles = [];
+    fireWorkspaceFoldersChange();
+    await tick();
+    // Findings still there → still visible.
+    expect(lastItem().shown).toBe(true);
+  });
+
+  it("re-latches when a CI folder is added back", async () => {
+    // Start without CI files.
+    globalThis.__stubFindFiles = [];
+    globalThis.__stubDiagnostics = [];
+    registerStatusBar(ctx);
+    await tick();
+    expect(lastItem().shown).toBe(false);
+
+    // User adds a folder that contains CI configs.
+    globalThis.__stubFindFiles = [uri("/repo/.github/workflows/ci.yml")];
+    fireWorkspaceFoldersChange();
+    await tick();
+    expect(lastItem().shown).toBe(true);
+  });
+
+  it("subscribes to onDidChangeWorkspaceFolders exactly once at activation", async () => {
+    // A future refactor that adds the listener in `update()` would
+    // register a new listener every diagnostic publish; pin the
+    // single-subscription contract.
+    globalThis.__stubFindFiles = [];
+    globalThis.__stubDiagnostics = [];
+    registerStatusBar(ctx);
+    await tick();
+    const listeners = globalThis.__stubWorkspaceFoldersListeners ?? [];
+    expect(listeners).toHaveLength(1);
   });
 });

@@ -19,11 +19,29 @@ beforeEach(() => {
 describe("PIP_INSTALL_COMMAND", () => {
   // The literal string is the contract — UI surfaces (welcome panel,
   // failure toast, copy command) and the terminal-install path all
-  // depend on it being exactly `pip install "pipeline-check[lsp]"`.
-  // Test failures here are intentional friction: an accidental rename
-  // (or missing quoting around the extra) should fail loudly.
-  it("is the canonical PyPI install line, with the [lsp] extra quoted", () => {
-    expect(PIP_INSTALL_COMMAND).toBe('pip install "pipeline-check[lsp]"');
+  // depend on it. Test failures here are intentional friction: an
+  // accidental rename (or missing quoting around the extra) should
+  // fail loudly.
+
+  it("is the canonical PyPA `python -m pip` install line, with the [lsp] extra quoted", () => {
+    expect(PIP_INSTALL_COMMAND).toBe(
+      'python -m pip install "pipeline-check[lsp]"',
+    );
+  });
+
+  it("invokes pip via the python interpreter (NOT the bare `pip` shim)", () => {
+    // The `python -m pip` form is what dodges PowerShell
+    // ExecutionPolicy blocking pip.exe AND the "no pip on PATH"
+    // case when only python is installed. A regression to
+    // `pip install ...` reintroduces both failure modes on Windows.
+    expect(PIP_INSTALL_COMMAND.startsWith("python -m pip ")).toBe(true);
+    expect(PIP_INSTALL_COMMAND.startsWith("pip ")).toBe(false);
+  });
+
+  it("targets the [lsp] extra (not the base package)", () => {
+    // Without the [lsp] extra the LSP server module isn't installed
+    // and the extension still can't start. Lock the extra in.
+    expect(PIP_INSTALL_COMMAND).toContain('"pipeline-check[lsp]"');
   });
 });
 
