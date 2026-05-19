@@ -33,6 +33,17 @@ export interface ScanResult {
   readonly cancelled: boolean;
 }
 
+export interface ScanOptions {
+  /**
+   * Quiet scans render as a status-bar progress item (no modal toast)
+   * and suppress the completion notification. Used by the scan-on-save
+   * path so a save-heavy workflow doesn't paper the screen with toasts.
+   * The user-initiated scan command still uses the notification surface
+   * — discoverable progress + a cancellation button.
+   */
+  readonly quiet?: boolean;
+}
+
 /**
  * Walk the workspace, open every candidate document, and let the LSP's
  * `didOpen` pipeline produce diagnostics. Returns a summary the caller
@@ -42,21 +53,28 @@ export interface ScanResult {
  * counted but never abort the scan — one bad file shouldn't hide
  * findings in the other 49.
  */
-export async function scanWorkspace(): Promise<ScanResult> {
+export async function scanWorkspace(
+  options: ScanOptions = {},
+): Promise<ScanResult> {
+  const quiet = options.quiet === true;
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) {
-    void vscode.window.showInformationMessage(
-      "Pipeline-Check: open a workspace folder before scanning.",
-    );
+    if (!quiet) {
+      void vscode.window.showInformationMessage(
+        "Pipeline-Check: open a workspace folder before scanning.",
+      );
+    }
     return { scanned: 0, failed: 0, cancelled: false };
   }
 
   const uris = await vscode.workspace.findFiles(buildScanGlob(), EXCLUDE_GLOB);
 
   if (uris.length === 0) {
-    void vscode.window.showInformationMessage(
-      "Pipeline-Check: no scannable files found in this workspace.",
-    );
+    if (!quiet) {
+      void vscode.window.showInformationMessage(
+        "Pipeline-Check: no scannable files found in this workspace.",
+      );
+    }
     return { scanned: 0, failed: 0, cancelled: false };
   }
 
@@ -66,9 +84,16 @@ export async function scanWorkspace(): Promise<ScanResult> {
 
   await vscode.window.withProgress(
     {
-      location: vscode.ProgressLocation.Notification,
+      // Status-bar spinner in quiet mode, full modal progress for the
+      // user-initiated command. The status-bar surface has no inherent
+      // cancellation affordance, so we drop `cancellable` too — a
+      // quiet scan-on-save scan is short-lived enough that not having a
+      // cancel button isn't a regression in practice.
+      location: quiet
+        ? vscode.ProgressLocation.Window
+        : vscode.ProgressLocation.Notification,
       title: "Pipeline-Check: scanning workspace",
-      cancellable: true,
+      cancellable: !quiet,
     },
     async (progress, token) => {
       const step = 100 / uris.length;
@@ -96,11 +121,13 @@ export async function scanWorkspace(): Promise<ScanResult> {
     },
   );
 
-  const summary = formatSummary({ scanned, failed, cancelled });
-  if (cancelled || failed > 0) {
-    void vscode.window.showWarningMessage(summary);
-  } else {
-    void vscode.window.showInformationMessage(summary);
+  if (!quiet) {
+    const summary = formatSummary({ scanned, failed, cancelled });
+    if (cancelled || failed > 0) {
+      void vscode.window.showWarningMessage(summary);
+    } else {
+      void vscode.window.showInformationMessage(summary);
+    }
   }
   return { scanned, failed, cancelled };
 }

@@ -13,6 +13,17 @@ versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-05-19
+
+First stable release. Closes the v0.x line: the Findings tree has its
+remaining affordances (filter, non-preview open, scan-on-save), the
+release-tooling and repo-security work is fully landed (SHAs pinned on
+every action, GITHUB_TOKEN locked out of `.git/config`, Private
+Vulnerability Reporting + Discussions enabled, production environment
+gate, `npm audit` + dependency-review + CodeQL on every push), and the
+internal eslint stack is on v9 flat config so future toolchain bumps
+have a clean ramp. No telemetry — see [SECURITY.md](SECURITY.md).
+
 ### Added
 
 - **`Pipeline-Check: Filter Findings` command.** Opens an InputBox;
@@ -28,6 +39,15 @@ versions follow [SemVer](https://semver.org/).
   tab — useful when triaging multiple findings side-by-side. The
   default click-to-reveal still uses preview-style so the common
   "click through to scan" flow doesn't create tab clutter.
+- **Scan-on-save mode.** New `pipelineCheck.scanOnSave` setting
+  (default `false`). When enabled, saving a CI/CD config file triggers
+  a quiet workspace re-scan — the LSP already re-publishes diagnostics
+  for the saved file itself on `didSave`, so this picks up cross-file
+  effects in *other* CI files that aren't currently open (a Jenkinsfile
+  that includes the just-edited shared library, a GHA workflow that
+  calls the just-edited composite action). Renders as a status-bar
+  spinner with no completion toast; an in-flight guard collapses
+  save-storms (autosave, Save All) to a single scan. (R29)
 - **Status bar background colour reflects severity.** A workspace with
   any CRITICAL finding tints the bar to `statusBarItem.errorBackground`
   (red in the default themes); a workspace with HIGH but no CRITICAL
@@ -67,6 +87,11 @@ versions follow [SemVer](https://semver.org/).
   `providers.ts`. The single source of truth for which files are
   CI-relevant now drives the documentSelector, the activationEvents,
   and the workspace scan — three surfaces that used to drift apart.
+- **ESLint migrated to v9 flat config.** Replaced `.eslintrc.json` with
+  [eslint.config.mjs](eslint.config.mjs); dropped
+  `@typescript-eslint/eslint-plugin` + `@typescript-eslint/parser` in
+  favour of the unified `typescript-eslint` package. Rules carry over
+  verbatim so lint results are unchanged. (R22)
 
 ## [0.2.0] — 2026-05-19
 

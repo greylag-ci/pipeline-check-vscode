@@ -429,6 +429,39 @@ export async function activate(
 
   await startClient();
 
+  // Scan-on-save: when the user saves a CI/CD config file and has the
+  // setting enabled, re-scan the whole workspace (quietly). The LSP
+  // already re-publishes diagnostics for the saved file itself on
+  // `didSave`, so this is purely about picking up cross-file effects in
+  // *other* CI files (a Jenkinsfile that includes the just-edited
+  // library, a GHA workflow that calls the just-edited composite
+  // action). A simple in-flight guard prevents save-storms (autosave,
+  // Save All) from queueing redundant scans.
+  let scanOnSaveBusy = false;
+  context.subscriptions.push(
+    vscode.workspace.onDidSaveTextDocument(async (doc) => {
+      const config = vscode.workspace.getConfiguration("pipelineCheck");
+      if (!config.get<boolean>("scanOnSave", false)) {
+        return;
+      }
+      // Only react to saves of CI-relevant files. providerForPath
+      // returns `undefined` for anything that doesn't match our
+      // glob patterns, so package.json / random YAML never triggers.
+      if (!providerForPath(doc.uri.fsPath)) {
+        return;
+      }
+      if (scanOnSaveBusy) {
+        return;
+      }
+      scanOnSaveBusy = true;
+      try {
+        await scanWorkspace({ quiet: true });
+      } finally {
+        scanOnSaveBusy = false;
+      }
+    }),
+  );
+
   // Fire-and-forget the one-time "what's new" toast for users who
   // just upgraded. Detached so a not-yet-dismissed notification never
   // blocks activation (same lesson as the LSP-failure toast). The
