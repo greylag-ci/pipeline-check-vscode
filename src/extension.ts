@@ -188,21 +188,33 @@ async function startClient(): Promise<void> {
     // actions so the user can act on either without re-reading the
     // notification body. The notification chrome already shows the
     // extension name, so the message body doesn't repeat it.
+    //
+    // The notification is fire-and-forget: `showErrorMessage` resolves
+    // only when the user clicks a button or closes the toast, and
+    // `activate()` already awaits this path. Awaiting here would block
+    // activation indefinitely whenever nobody is around to click
+    // (CI, automation, headless extension host). Detaching keeps the
+    // user's buttons live while letting startClient return.
     const message = err instanceof Error ? err.message : String(err);
     clientLog.error(`language server: failed to start — ${message}`);
-    const choice = await vscode.window.showErrorMessage(
-      `Language server failed to start (${message}).`,
-      "Copy install command",
-      "Open server log",
-    );
-    if (choice === "Copy install command") {
-      await vscode.env.clipboard.writeText('pip install "pipeline-check[lsp]"');
-      vscode.window.showInformationMessage(
-        'Copied: pip install "pipeline-check[lsp]"',
-      );
-    } else if (choice === "Open server log") {
-      outputChannel.show();
-    }
+    void vscode.window
+      .showErrorMessage(
+        `Language server failed to start (${message}).`,
+        "Copy install command",
+        "Open server log",
+      )
+      .then(async (choice) => {
+        if (choice === "Copy install command") {
+          await vscode.env.clipboard.writeText(
+            'pip install "pipeline-check[lsp]"',
+          );
+          void vscode.window.showInformationMessage(
+            'Copied: pip install "pipeline-check[lsp]"',
+          );
+        } else if (choice === "Open server log") {
+          outputChannel.show();
+        }
+      });
     // Drop the broken client so a subsequent restart starts fresh
     // rather than trying to recover from a half-initialised state.
     client = undefined;
