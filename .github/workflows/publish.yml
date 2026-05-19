@@ -50,7 +50,9 @@ jobs:
     # publish steps will block on the environment gate.
     environment: production
     permissions:
-      contents: write   # needed by the "Create GitHub release" step
+      contents: write       # needed by the "Create GitHub release" step
+      id-token: write       # OIDC for sigstore signing via attest-build-provenance
+      attestations: write   # store the SLSA provenance attestation on the repo
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
@@ -121,6 +123,13 @@ jobs:
       - name: Bundle smoke
         run: npm run smoke
 
+      - name: npm audit (prod deps, high+)
+        # Block the publish if a HIGH/CRITICAL advisory affects a
+        # runtime dependency. Dev-only deps are out of scope — they
+        # don't ship in the .vsix. Mirrors the CI gate so a vuln that
+        # lands between CI and tag-push still trips here.
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Detect pre-release tag
         # A tag like `v0.2.0-rc.1` (anything with a `-` after the
         # semver core) ships to the marketplace's pre-release channel
@@ -151,6 +160,31 @@ jobs:
           npx vsce package $PRERELEASE_FLAG --out "pipeline-check-${version}.vsix"
           ls -lh "pipeline-check-${version}.vsix"
           echo "VSIX_PATH=pipeline-check-${version}.vsix" >> $GITHUB_ENV
+          echo "SBOM_PATH=pipeline-check-${version}-sbom.cdx.json" >> $GITHUB_ENV
+
+      - name: Generate SBOM (CycloneDX)
+        # Scans package-lock.json so the SBOM captures the full
+        # production + transitive dep set, not just the tree-shaken
+        # bundle inside the .vsix. Output is attached to the GitHub
+        # release below so marketplace consumers can ingest it into
+        # their vuln-management pipeline.
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+        with:
+          format: cyclonedx-json
+          output-file: ${{ env.SBOM_PATH }}
+          # Suppress the action's own artifact upload — we ship the
+          # SBOM via `gh release create` below instead.
+          upload-artifact: false
+
+      - name: Attest build provenance
+        # Produces a signed SLSA build provenance attestation for the
+        # .vsix using GitHub's OIDC token and Sigstore's keyless
+        # signing flow. Satisfies both signing (cosign/sigstore) and
+        # SLSA provenance — consumers can verify with
+        # `gh attestation verify <vsix> --owner greylag-ci`.
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
+        with:
+          subject-path: ${{ env.VSIX_PATH }}
 
       - name: Publish to VS Code Marketplace
         env:
@@ -175,6 +209,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           version=$(node -p "require('./package.json').version")
-          gh release create "v${version}" "$VSIX_PATH" $GH_PRERELEASE \
+          gh release create "v${version}" "$VSIX_PATH" "$SBOM_PATH" $GH_PRERELEASE \
             --title "v${version}" \
             --notes-file <(awk '/^## \[/{n++} n==2{exit} n==1{print}' CHANGELOG.md)

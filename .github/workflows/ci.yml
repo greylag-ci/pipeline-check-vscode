@@ -19,6 +19,13 @@ permissions:
   # gracefully without this (GitHub strips write tokens for forks), so
   # the gap only surfaced on the first push: main run.
   security-events: write
+  # attest-build-provenance needs an OIDC token (id-token) and write
+  # access to the repo's attestations store. Same fork caveat as
+  # security-events — declared here for push:main runs, gated by
+  # `if:` on the attest step so fork-PR runs don't fail trying to use
+  # them.
+  id-token: write
+  attestations: write
 
 jobs:
   check:
@@ -114,6 +121,29 @@ jobs:
         # vsce is a pinned devDependency (see package.json) — Dependabot
         # bumps it via the npm config. `npm ci` has already installed it.
         run: npx vsce package --out pipeline-check.vsix
+
+      - name: Generate SBOM (CycloneDX)
+        # Linux-only — one SBOM per run is enough; the matrix legs
+        # would produce identical content from the same lockfile.
+        # Mirrors the publish workflow's SBOM step so a release SBOM
+        # can be diffed against a CI SBOM if the trees diverge.
+        if: matrix.os == 'ubuntu-latest'
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+        with:
+          format: cyclonedx-json
+          output-file: pipeline-check-sbom.cdx.json
+          artifact-name: sbom
+
+      - name: Attest build provenance
+        # Produces a signed SLSA build provenance attestation for the
+        # CI .vsix via OIDC + Sigstore keyless signing. Gated on
+        # `push` because fork-PR runs get read-only tokens that
+        # cannot mint OIDC tokens or write attestations. Linux-only
+        # — same one-per-run rationale as the SBOM step.
+        if: github.event_name == 'push' && matrix.os == 'ubuntu-latest'
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
+        with:
+          subject-path: pipeline-check.vsix
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
         # Single artefact upload from the Linux job; identical-name
