@@ -5,6 +5,7 @@ vi.mock("vscode", async () => {
   return vscodeStub();
 });
 
+import { resetStubState } from "./__testStubs__/vscode";
 import {
   FindingsCodeLensProvider,
   composeLensTitle,
@@ -137,6 +138,12 @@ describe("FindingsCodeLensProvider — pipelineCheck.codeLens.enabled toggle", (
   } as unknown as import("vscode").TextDocument;
 
   beforeEach(() => {
+    // Reset every shared global before seeding the slots this suite
+    // actually reads. Resetting only `__stubDiagnostics` + `__stubConfig`
+    // (the old pattern) leaves `__stubCalls.executeCommand` etc.
+    // accumulating from neighbouring tests — fine today, fragile if a
+    // future test in this file starts asserting on the call history.
+    resetStubState();
     (globalThis as { __stubDiagnostics?: unknown }).__stubDiagnostics = [
       [
         { toString: () => "file:///a.yml" },
@@ -154,7 +161,6 @@ describe("FindingsCodeLensProvider — pipelineCheck.codeLens.enabled toggle", (
         ],
       ],
     ];
-    (globalThis as { __stubConfig?: Record<string, unknown> }).__stubConfig = {};
   });
 
   it("emits a lens when codeLens.enabled is true (default)", () => {

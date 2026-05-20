@@ -114,6 +114,19 @@ describe("providerForPath", () => {
     expect(providerForPath("/repo/values.yaml")).toBeUndefined();
   });
 
+  it("requires `**/<name>` to match on a real segment boundary, not mid-segment", () => {
+    // Regression fence: the previous translation of `**` was `.*`,
+    // which crosses path separators. `**/Dockerfile` would then match
+    // `myDockerfile` (no slash before the `D`), and the
+    // disabledProviders middleware filter would silence the wrong file.
+    expect(providerForPath("/repo/myDockerfile")).toBeUndefined();
+    expect(providerForPath("/repo/notJenkinsfile")).toBeUndefined();
+    expect(providerForPath("/repo/foo.github/workflows/ci.yml")).toBeUndefined();
+    // Sanity: the proper-segment paths still match.
+    expect(providerForPath("Dockerfile")).toBe("dockerfile");
+    expect(providerForPath("a/b/Dockerfile")).toBe("dockerfile");
+  });
+
   it("matches Dockerfile and Jenkinsfile case-insensitively", () => {
     // Windows file systems are case-insensitive but preserve the
     // on-disk case in `fsPath`. A user with `dockerfile` (lowercase)

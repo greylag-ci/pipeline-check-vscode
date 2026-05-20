@@ -124,14 +124,23 @@ describe("isUpgrade", () => {
     expect(isUpgrade("1.0.0", "1.0.0-rc.1")).toBe(false);
   });
 
-  it("compares pre-release suffixes lexicographically when both are pre-release", () => {
-    // rc.1 < rc.2 (string compare matches semver for the suffixes
-    // we actually ship). Notification fires once per rc bump on the
-    // same core triple, which matches what pre-release users want:
-    // see what changed between rc.1 and rc.2.
+  it("compares pre-release identifiers per semver §11.4 (numeric segments compare numerically)", () => {
+    // Plain rc.N progressions.
     expect(isUpgrade("1.0.0-rc.1", "1.0.0-rc.2")).toBe(true);
     expect(isUpgrade("1.0.0-rc.2", "1.0.0-rc.1")).toBe(false);
     expect(isUpgrade("1.0.0-rc.1", "1.0.0-rc.1")).toBe(false);
+    // Regression fence: a bare string-compare would say "rc.10" < "rc.2"
+    // because '1' < '2' lexicographically, so rc.2 → rc.10 would NOT
+    // fire the toast. Numeric-identifier compare per spec puts 10 > 2.
+    expect(isUpgrade("1.0.0-rc.2", "1.0.0-rc.10")).toBe(true);
+    expect(isUpgrade("1.0.0-rc.10", "1.0.0-rc.2")).toBe(false);
+    // Numeric identifiers always rank below non-numeric ones (§11.4.3),
+    // so `alpha.1` > `1`.
+    expect(isUpgrade("1.0.0-1", "1.0.0-alpha.1")).toBe(true);
+    // Longer pre-release set wins when all preceding identifiers match
+    // (§11.4.4).
+    expect(isUpgrade("1.0.0-rc.1", "1.0.0-rc.1.1")).toBe(true);
+    expect(isUpgrade("1.0.0-rc.1.1", "1.0.0-rc.1")).toBe(false);
   });
 
   it("a higher core triple wins regardless of pre-release tags", () => {

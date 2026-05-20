@@ -82,6 +82,12 @@ declare global {
   var __stubFindFilesByPattern:
     | Record<string, Array<{ toString: () => string; fsPath: string }>>
     | undefined;
+  // When set, every `findFiles` call rejects with this error. Used by
+  // the workspaceScan test that pins propagation of a pre-loop failure
+  // (workspace closed mid-call, fs error) — the case where the scan
+  // never reaches the per-file try/catch and the rejection escapes
+  // scanWorkspace's outer try/finally.
+  var __stubFindFilesError: Error | undefined;
   // What `workspace.workspaceFolders` should return for the duration
   // of a test. `undefined` mimics "no workspace open".
   var __stubWorkspaceFolders:
@@ -147,6 +153,7 @@ export function resetStubState(): void {
   globalThis.__stubDiagnostics = [];
   globalThis.__stubFindFiles = undefined;
   globalThis.__stubFindFilesByPattern = undefined;
+  globalThis.__stubFindFilesError = undefined;
   globalThis.__stubWorkspaceFolders = undefined;
   globalThis.__stubOpenTextDocumentFailures = undefined;
   globalThis.__stubOpenTextDocumentGate = undefined;
@@ -311,6 +318,9 @@ export function vscodeStub(): Record<string, unknown> {
       findFiles: (include: string, exclude?: string, maxResults?: number) => {
         const calls = ensureCalls();
         calls.findFiles.push({ include, exclude, maxResults });
+        if (globalThis.__stubFindFilesError) {
+          return Promise.reject(globalThis.__stubFindFilesError);
+        }
         const byPattern = globalThis.__stubFindFilesByPattern;
         if (byPattern) {
           return Promise.resolve(byPattern[include] ?? []);

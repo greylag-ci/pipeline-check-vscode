@@ -88,6 +88,32 @@ async function changeGrouping(
     provider.setGroupMode(choice.mode);
   }
 }
+/**
+ * Wrapper around `scanWorkspace()` for the two user-fired commands
+ * (`Scan workspace` and `Refresh findings`). `scanWorkspace` re-throws
+ * if `findScannableFiles` rejects (workspace closed mid-scan, fs error
+ * before the loop is set up); without this wrapper, the command's
+ * rejected promise lands as a generic "Command 'X' resulted in an
+ * error" toast divorced from the click. The wrapper writes a real
+ * breadcrumb to the log and shows a Pipeline-Check-branded toast so
+ * the user can act on the failure.
+ *
+ * Per-file errors during the loop are already counted as `failed` and
+ * surfaced through `formatSummary`; this path is strictly for failures
+ * that prevent the scan from running at all.
+ */
+async function runScanCommand(): Promise<void> {
+  try {
+    await scanWorkspace();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    clientLog.error(`scan: failed to start — ${message}`);
+    void vscode.window.showErrorMessage(
+      `Pipeline-Check: scan could not start — ${message}`,
+    );
+  }
+}
+
 const LANGUAGE_ID = "pipelineCheck";
 const LANGUAGE_NAME = "Pipeline-Check";
 const OUTPUT_CHANNEL = "Pipeline-Check";
@@ -190,19 +216,38 @@ async function startClient(): Promise<void> {
     // this guard is the genuinely-duplicate case.
     return;
   }
-  client = buildClient();
+  // Capture the client we just built into a local. The module-level
+  // `client` can be reassigned by a concurrent `stopClient()` while we
+  // sit on the `await` below; reading off the local keeps the
+  // post-start wiring referencing the SAME client we awaited, and lets
+  // us cleanly detect the "ours got swapped out" case before touching
+  // shared state.
+  const local = buildClient();
+  client = local;
   // The output channel is created by LanguageClient as a side effect of
   // construction, so it is always present here. Capture it before we
   // drop the broken client on failure (the "Open server log" action
   // below still needs to focus it to surface the server's traceback).
-  const outputChannel: vscode.OutputChannel = client.outputChannel;
+  const outputChannel: vscode.OutputChannel = local.outputChannel;
   // Point the client-side logger at the same channel the LSP server
   // writes to, so [client] and [server] lines interleave with shared
   // timestamps — much easier to read when triaging a bug report.
   clientLog.setLogChannel(outputChannel);
   try {
     clientLog.info("language server: starting");
-    await startWithTimeout(client, START_TIMEOUT_MS);
+    await startWithTimeout(local, START_TIMEOUT_MS);
+    // Concurrent-restart race: if stopClient() ran while we were
+    // awaiting, the module-level `client` was already reassigned (or
+    // cleared). The LSP we just started is orphaned — best-effort kill
+    // it so we don't leak a subprocess, and bail without flipping any
+    // shared state that now belongs to a different client.
+    if (client !== local) {
+      clientLog.warn(
+        "language server: start completed but client was swapped during startup; killing orphan",
+      );
+      void local.stop().catch(() => undefined);
+      return;
+    }
     clientLog.info("language server: started");
     setLspReady(true);
     // Watch the post-start lifecycle so a mid-session crash (server
@@ -213,7 +258,7 @@ async function startClient(): Promise<void> {
     // "Scan workspace" even though clicking it produces no findings.
     // The listener lives in module scope so stopClient can tear it
     // down before a restart builds a new one against the new client.
-    clientStateChangeDisposable = client.onDidChangeState((event) => {
+    clientStateChangeDisposable = local.onDidChangeState((event) => {
       if (event.newState === State.Stopped) {
         clientLog.warn("language server: state transitioned to stopped");
         setLspReady(false);
@@ -250,10 +295,14 @@ async function startClient(): Promise<void> {
           outputChannel.show();
         }
       });
-    // Drop the broken client so a subsequent restart starts fresh
-    // rather than trying to recover from a half-initialised state.
-    client = undefined;
-    setLspReady(false);
+    // Only clear the module slot if it still points at OUR client. If
+    // stopClient already swapped in a new one (concurrent restart),
+    // clobbering would strand the new client. Same idea on the ready
+    // flag — leave it alone unless we're the live client.
+    if (client === local) {
+      client = undefined;
+      setLspReady(false);
+    }
   }
 }
 
@@ -337,7 +386,7 @@ export async function activate(
     // didOpen pipeline on each. Findings panel updates as the server
     // publishes; no extra state to manage.
     vscode.commands.registerCommand("pipelineCheck.scanWorkspace", () =>
-      scanWorkspace(),
+      runScanCommand(),
     ),
     // "Refresh Findings" was historically a tree-only re-render. Now
     // that we have a real scan command, refresh runs an actual scan so
@@ -345,7 +394,7 @@ export async function activate(
     // should fetch fresh data, not re-paint stale data. The tree
     // updates automatically as scan publishes arrive (R10).
     vscode.commands.registerCommand("pipelineCheck.findings.refresh", () =>
-      scanWorkspace(),
+      runScanCommand(),
     ),
     vscode.commands.registerCommand(
       "pipelineCheck.findings.changeGrouping",
@@ -452,14 +501,14 @@ export async function activate(
       // If start failed it surfaced its own error toast; we'd otherwise
       // show "failed to start" and "restarted" at the same time.
       if (client) {
-        vscode.window.showInformationMessage("Language server restarted.");
+        void vscode.window.showInformationMessage("Language server restarted.");
       }
     }),
     vscode.commands.registerCommand("pipelineCheck.showLog", () => {
       if (client?.outputChannel) {
         client.outputChannel.show();
       } else {
-        vscode.window.showInformationMessage(
+        void vscode.window.showInformationMessage(
           "The language server is not running yet. Open a supported file " +
             "or run 'Pipeline-Check: Restart language server'.",
         );
@@ -498,6 +547,15 @@ export async function activate(
       return !disabled.includes(provider);
     },
     scan: () => scanWorkspace({ quiet: true }),
+    // Surface a scan failure to the log instead of letting it bubble
+    // out as an unhandled rejection. onDidSaveTextDocument doesn't
+    // await its listener, so without this hook the only trace would
+    // be a generic extension-host error nobody connects back to a
+    // save event — the log line names the symptom clearly.
+    onError: (err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      clientLog.error(`scan-on-save: scan failed — ${msg}`);
+    },
   });
   context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(onSave));
 

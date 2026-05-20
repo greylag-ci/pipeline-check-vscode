@@ -10,6 +10,7 @@ vi.mock("vscode", async () => {
 });
 
 // Import after the mock is registered.
+import { resetStubState } from "./__testStubs__/vscode";
 import { FindingsTreeProvider } from "./findingsView";
 
 const ctx = {
@@ -65,7 +66,12 @@ function setStubDiagnostics(findings: FakeFinding[]): void {
 }
 
 beforeEach(() => {
-  (globalThis as { __stubDiagnostics?: unknown }).__stubDiagnostics = [];
+  // Full reset (not just `__stubDiagnostics`) so the shared `__stubCalls`
+  // — populated by every FindingsTreeProvider constructor via the
+  // `setContext` executeCommand — doesn't accumulate across tests.
+  // Currently no test asserts on that history; the reset keeps a
+  // future assertion honest.
+  resetStubState();
 });
 
 describe("FindingsTreeProvider — collection from diagnostics", () => {

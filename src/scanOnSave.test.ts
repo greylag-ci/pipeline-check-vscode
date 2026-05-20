@@ -118,31 +118,62 @@ describe("createScanOnSaveHandler", () => {
     await second;
   });
 
-  it("releases the busy lock even when the scan rejects", async () => {
-    // A rejected scan must NOT leave the lock stuck on — otherwise
-    // a single transient failure would silence scan-on-save for the
-    // rest of the session.
+  it("swallows a scan rejection, routes it through onError, and re-arms the same handler", async () => {
+    // Three contracts in one test, because they're load-bearing
+    // together:
+    //   (1) The handler does NOT re-throw. VS Code's
+    //       onDidSaveTextDocument is fire-and-forget; a propagated
+    //       rejection lands as an "unhandled promise rejection" in
+    //       the extension-host log, divorced from any user action.
+    //   (2) `onError` runs so the breadcrumb reaches the log channel.
+    //   (3) The SAME handler instance accepts a subsequent save —
+    //       the lock-release in `finally` is per-call, not per-life.
+    //       A previous test version used a fresh handler2 here and
+    //       only proved that the closure-init code works.
+    const errors: unknown[] = [];
+    let scanCalls = 0;
+    let nextRejects = true;
+    const deps: ScanOnSaveDeps = {
+      isEnabled: () => true,
+      shouldScanOnSave: () => true,
+      scan: () => {
+        scanCalls += 1;
+        return nextRejects
+          ? Promise.reject(new Error("transient"))
+          : Promise.resolve();
+      },
+      onError: (err) => {
+        errors.push(err);
+      },
+    };
+    const handler = createScanOnSaveHandler(deps);
+
+    // First save rejects; the handler resolves cleanly and the error
+    // is captured.
+    await expect(handler(doc("/repo/.gitlab-ci.yml"))).resolves.toBeUndefined();
+    expect(scanCalls).toBe(1);
+    expect(errors).toHaveLength(1);
+    expect((errors[0] as Error).message).toBe("transient");
+
+    // Second save on the SAME handler must scan. If the lock leaked,
+    // the busy flag would still be on and this would be a no-op.
+    nextRejects = false;
+    await handler(doc("/repo/.gitlab-ci.yml"));
+    expect(scanCalls).toBe(2);
+    expect(errors).toHaveLength(1); // no new error
+  });
+
+  it("is silent on rejection when onError is omitted (default no-op)", async () => {
+    // `onError` is optional; tests and any caller that doesn't care
+    // about the failure path can leave it off. The handler still
+    // resolves rather than re-throwing.
     const deps: ScanOnSaveDeps = {
       isEnabled: () => true,
       shouldScanOnSave: () => true,
       scan: () => Promise.reject(new Error("transient")),
     };
     const handler = createScanOnSaveHandler(deps);
-    await expect(handler(doc("/repo/.gitlab-ci.yml"))).rejects.toThrow(
-      "transient",
-    );
-    // The next save must still get a fresh scan.
-    let secondScanFired = false;
-    const handler2 = createScanOnSaveHandler({
-      isEnabled: () => true,
-      shouldScanOnSave: () => true,
-      scan: () => {
-        secondScanFired = true;
-        return Promise.resolve();
-      },
-    });
-    await handler2(doc("/repo/.gitlab-ci.yml"));
-    expect(secondScanFired).toBe(true);
+    await expect(handler(doc("/repo/.gitlab-ci.yml"))).resolves.toBeUndefined();
   });
 
   it("re-evaluates isEnabled on every save (not cached)", async () => {

@@ -35,10 +35,9 @@ function fakeChannel() {
 
 beforeEach(() => {
   // Reset the module-scope channel so a test that doesn't call
-  // setLogChannel can verify the no-op path.
-  setLogChannel(
-    undefined as unknown as import("vscode").OutputChannel,
-  );
+  // setLogChannel can verify the no-op path. The signature now
+  // accepts `undefined` directly — no `as unknown as` cast needed.
+  setLogChannel(undefined);
 });
 
 describe("formatTimestamp", () => {

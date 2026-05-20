@@ -137,13 +137,24 @@ function toRegex(pattern: string): RegExp {
   // segments; `*` matches anything but `/`. The `i` flag carries
   // case-insensitive matching so `Dockerfile` and `dockerfile` map
   // to the same provider.
+  //
+  // For `**/` specifically we emit `(?:.*/)?` — "any prefix that ends
+  // in /, or nothing at all". A plain `.*` would cross segment
+  // boundaries (e.g. `**/Dockerfile` would match `myDockerfile`
+  // because the `.` in `.*` happily eats the `m`/`y`); `(?:.*/)?`
+  // forces the prefix to be a real path prefix.
   let re = "";
   for (let i = 0; i < pattern.length; i++) {
     if (pattern[i] === "*" && pattern[i + 1] === "*") {
-      re += ".*";
-      i++;
-      // Eat an immediately-following `/` so `**/x` matches `x` too.
-      if (pattern[i + 1] === "/") i++;
+      if (pattern[i + 2] === "/") {
+        // `**/` → optional path prefix ending in /
+        re += "(?:.*/)?";
+        i += 2; // skip the second `*` and the trailing `/`
+      } else {
+        // Bare `**` (end of pattern or non-`/` follower) → match anything.
+        re += ".*";
+        i++; // skip the second `*`
+      }
     } else if (pattern[i] === "*") {
       re += "[^/]*";
     } else if (/[.+?^${}()|[\]\\]/.test(pattern[i])) {

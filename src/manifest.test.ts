@@ -147,7 +147,11 @@ describe("commands — install paths registered", () => {
     for (const w of welcome.filter(
       (e) => e.view === "pipelineCheck.findings",
     )) {
-      const targets = [...w.contents.matchAll(/command:(pipelineCheck\.[A-Za-z]+)/g)]
+      // Dotted command IDs (e.g. `pipelineCheck.findings.refresh`) need
+      // `.` in the class — otherwise the match stops at the first dot
+      // and a future welcome edit linking to a dotted command would slip
+      // past this regression fence.
+      const targets = [...w.contents.matchAll(/command:(pipelineCheck\.[A-Za-z.]+)/g)]
         .map((m) => m[1]);
       for (const target of targets) {
         expect(

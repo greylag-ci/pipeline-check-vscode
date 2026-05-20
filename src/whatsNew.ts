@@ -51,12 +51,54 @@ export function isUpgrade(prev: string | undefined, next: string): boolean {
   // Same core triple. Resolve via pre-release per semver §11:
   //   - prev has pre-release, next does not   → upgrade (rc → ga)
   //   - prev no pre-release, next has one     → not an upgrade (ga → rc)
-  //   - both have pre-release  → lexicographic compare on the suffix
-  //                              ("rc.1" < "rc.2")
+  //   - both have pre-release  → per-identifier compare (§11.4):
+  //                              numeric identifiers compare numerically
+  //                              (so `rc.10` > `rc.2`), non-numeric ones
+  //                              lexically, numeric < non-numeric, and a
+  //                              longer set wins when all preceding match.
   //   - both same / both empty → equal, not an upgrade
   if (a.prerelease && !b.prerelease) return true;
   if (!a.prerelease && b.prerelease) return false;
-  return b.prerelease > a.prerelease;
+  return comparePrerelease(a.prerelease, b.prerelease) < 0;
+}
+
+/**
+ * Per-identifier pre-release compare per semver §11.4. Returns a
+ * negative number when `a < b`, a positive number when `a > b`, and
+ * zero when they're equal. Exported for unit testing.
+ *
+ * The previous implementation used a bare `>` on the suffix string,
+ * which fails on numeric identifiers with mixed widths — `"rc.10"`
+ * compares LESS than `"rc.2"` in ASCII order because `'1' < '2'`. The
+ * spec is explicit: digit-only identifiers compare numerically.
+ */
+export function comparePrerelease(a: string, b: string): number {
+  if (a === b) return 0;
+  const aIds = a.split(".");
+  const bIds = b.split(".");
+  const len = Math.max(aIds.length, bIds.length);
+  for (let i = 0; i < len; i++) {
+    const ai = aIds[i];
+    const bi = bIds[i];
+    // A longer set of identifiers wins when all preceding match
+    // (§11.4.4). Missing identifier on either side ranks lower.
+    if (ai === undefined) return -1;
+    if (bi === undefined) return 1;
+    const aNum = /^\d+$/.test(ai);
+    const bNum = /^\d+$/.test(bi);
+    if (aNum && bNum) {
+      const an = parseInt(ai, 10);
+      const bn = parseInt(bi, 10);
+      if (an !== bn) return an - bn;
+    } else if (aNum !== bNum) {
+      // Numeric identifiers always have lower precedence than
+      // non-numeric ones (§11.4.3).
+      return aNum ? -1 : 1;
+    } else if (ai !== bi) {
+      return ai < bi ? -1 : 1;
+    }
+  }
+  return 0;
 }
 
 /**
