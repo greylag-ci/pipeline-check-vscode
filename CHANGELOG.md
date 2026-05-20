@@ -11,6 +11,109 @@ versions follow [SemVer](https://semver.org/).
 > section **above** Unreleased, or remove the Unreleased block for the
 > release commit. Otherwise the GitHub release ships boilerplate.
 
+## [1.0.2] — 2026-05-20
+
+Bug-fix batch on top of v1.0.1 — three review rounds turned up five
+real defects and a handful of housekeeping items, all covered by
+nine new unit tests (245 → 254). No new features; no behaviour
+change for users on the golden path. Highlights: rapid-fire LSP
+restarts no longer race into a `TypeError` in the extension host;
+`Pipeline-Check: Scan Workspace` failures land a real
+extension-branded error instead of VS Code's generic "Command
+failed" toast; `scan-on-save` rejections now surface in the output
+channel instead of leaking as unhandled promise rejections; the
+`What's New` upgrade-toast comparison handles double-digit
+pre-release identifiers (`rc.10 > rc.2`); and the internal `**`
+glob no longer matches mid-segment (a file literally named
+`myDockerfile` is no longer classified as a Dockerfile).
+
+### Fixed
+
+- **Restart-during-startup race in the LSP client no longer crashes
+  the extension host.** `startClient` referenced the module-level
+  `client` after awaiting `client.start()`; a concurrent
+  `stopClient` (second `Pipeline-Check: Restart` click, or
+  `deactivate` mid-startup) could clear the slot before
+  `onDidChangeState` wired up, throwing `TypeError: Cannot read
+  properties of undefined`. The client is now captured into a
+  local before the await, with an identity check after — if the
+  slot was swapped, the orphaned LSP child is killed cleanly and
+  no shared state is touched.
+- **`Pipeline-Check: Scan Workspace` / `Refresh Findings` rejections
+  surface a real toast.** If `findFiles` rejects before the loop
+  starts (workspace closed mid-call, fs error), `scanWorkspace`
+  re-throws; the command surface used to render that as a generic
+  `Command 'pipelineCheck.scanWorkspace' resulted in an error`
+  toast divorced from the click. A new `runScanCommand` wrapper
+  catches the rejection, writes a `scan: failed to start` line to
+  the Pipeline-Check output channel, and shows a
+  Pipeline-Check-branded `showErrorMessage` instead. Per-file
+  failures still flow through the normal `formatSummary` path.
+- **`scan-on-save` rejections no longer leak as unhandled promise
+  rejections.** `onDidSaveTextDocument` is fire-and-forget, so a
+  rejected scan promise used to land as an "unhandled promise
+  rejection" in the extension-host log with no connection back to
+  the save that triggered it. The handler now catches scan
+  failures, routes them through a new optional `onError` hook
+  wired to the Pipeline-Check output channel, and resolves
+  cleanly. The busy-lock still releases on every exit path.
+- **`What's New` upgrade compare now follows semver §11.4 for
+  pre-release identifiers.** The previous implementation compared
+  pre-release suffixes lexicographically, so `rc.10` ranked
+  *below* `rc.2` (because `'1' < '2'` in ASCII order) — a user on
+  `rc.2` upgrading to `rc.10` would not see the upgrade toast.
+  Numeric identifiers now compare numerically, non-numeric
+  lexically, numeric ranks below non-numeric, and a longer
+  identifier set wins on tie.
+- **Internal `**/` glob matcher no longer crosses segment
+  boundaries.** `**` translated to `.*`, so `**/Dockerfile`
+  matched `myDockerfile` (no slash before the `D`). The
+  `disabledProviders` middleware filter would then silence the
+  wrong file. `**/` now translates to `(?:.*/)?` so the prefix
+  must end on a real `/` (or be empty).
+
+### Changed
+
+- **`vscode:prepublish` ships with a synced `package-lock.json`.**
+  The lockfile's top-level `"version"` had drifted to `1.0.0`
+  while `package.json` advanced through `1.0.1`; this release
+  brings both to `1.0.2` so the `npm ci` reproducibility contract
+  the publish workflow relies on stays clean.
+- **`log.setLogChannel` accepts `undefined`.** The module already
+  treated a missing channel as a no-op; the signature now
+  documents that explicitly so tests (and any future caller that
+  needs to detach) don't have to lie via
+  `undefined as unknown as OutputChannel`.
+
+### Internal
+
+- **Manifest welcome-link regex now captures dotted command IDs.**
+  The regression-fence test that verifies every
+  `command:pipelineCheck.X` link in the welcome panel maps to a
+  declared command was stopping at the first `.`, so a future
+  welcome edit that linked to `pipelineCheck.findings.refresh`
+  would have slipped past the check.
+- **`workspaceScan` and `navigate` test names match what they
+  actually test, with new sibling tests for the propagation
+  paths.** The old "withProgress throws" test only exercised the
+  per-file caught-failure case; a new test now reaches the real
+  pre-loop `findScannableFiles` rejection path. The
+  "strict comparison" navigate test now uses two findings so it
+  actually verifies advancement (the old single-element setup
+  only proved wrap-around).
+- **`codeLens` / `findingsView` test suites now use the full
+  `resetStubState()` reset.** Closes a latent fragility where a
+  future assertion on `__stubCalls.executeCommand` (populated by
+  the `FindingsTreeProvider` constructor's `setContext` call)
+  would have inherited stale state from earlier tests in the
+  same file.
+- **CodeQL workflow trimmed.** Drops the GitHub template
+  scaffolding (`build-mode` matrix include, `swift`-vs-`ubuntu`
+  runner-os switch, manual-build placeholder step) so the file
+  shows only what we actually configure — the same three
+  languages (`actions`, `javascript-typescript`, `python`) and
+  the same pinned action SHAs.
+
 ## [1.0.1] — 2026-05-19
 
 Stability batch on top of v1.0.0 — three rounds of edge-case
