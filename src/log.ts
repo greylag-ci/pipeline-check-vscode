@@ -17,8 +17,13 @@ let channel: vscode.OutputChannel | undefined;
  * Set the output channel logs are written to. Called once from
  * activate() after the LanguageClient has constructed its channel,
  * so client logs and server logs share the same surface.
+ *
+ * Accepts `undefined` so a test (or any future caller that needs to
+ * reset state) can detach without an `as unknown as OutputChannel`
+ * cast. The module already treated a missing channel as a no-op; the
+ * signature now documents that explicitly.
  */
-export function setLogChannel(c: vscode.OutputChannel): void {
+export function setLogChannel(c: vscode.OutputChannel | undefined): void {
   channel = c;
 }
 

@@ -402,14 +402,28 @@ describe("scanWorkspace — in-flight busy guard", () => {
     await first;
   });
 
-  it("releases the busy flag on the finally path even if withProgress throws", async () => {
-    // The finally is the only thing standing between a thrown
-    // progress task and a permanently-locked guard. Force a throw
-    // by making openTextDocument reject for the only file.
+  it("releases the busy flag after a per-file openTextDocument failure (caught inside the loop)", async () => {
+    // A single bad file is the common partial-failure case: the loop's
+    // try/catch counts it as `failed` and continues. The lock must
+    // still release on the normal exit path. (The pre-loop propagation
+    // case has its own test below.)
     globalThis.__stubOpenTextDocumentFailures = new Set([
       "file:///r/Dockerfile",
     ]);
     await scanWorkspace();
+    expect(isScanInProgress()).toBe(false);
+  });
+
+  it("releases the busy flag and rethrows when findScannableFiles itself rejects", async () => {
+    // The outer try has no catch — only a finally — so a failure
+    // BEFORE the per-file loop (workspace closed mid-call, fs error
+    // surfacing from findFiles) escapes scanWorkspace as a rejection.
+    // The finally must still fire so the lock doesn't stay stuck on
+    // for the rest of the session, and the caller (the command
+    // wrapper in extension.ts) is the one that turns the rejection
+    // into a friendly toast.
+    globalThis.__stubFindFilesError = new Error("workspace closed mid-scan");
+    await expect(scanWorkspace()).rejects.toThrow("workspace closed mid-scan");
     expect(isScanInProgress()).toBe(false);
   });
 

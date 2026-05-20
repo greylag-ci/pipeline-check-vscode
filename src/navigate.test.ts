@@ -175,12 +175,23 @@ describe("pickNextIndex", () => {
     ).toBe(2);
   });
 
-  it("strict comparison: cursor on the SAME column as a finding still advances", () => {
-    // The finding sits at line 5 char 0. Cursor at line 5 char 0 should
-    // still move us past it on `next`, not pin.
-    const single = findings(["/a/x.yml", 5]);
+  it("strict comparison: cursor exactly on a finding's start advances to the NEXT finding, not the same one", () => {
+    // The contract documented at navigate.ts:54 — "next from EXACTLY
+    // on a finding → the one after". A two-finding list catches the
+    // real advancement; a single-element list would only prove
+    // wrap-around (which has its own test below).
+    const two = findings(["/a/x.yml", 5], ["/a/x.yml", 9]);
     expect(
-      pickNextIndex(single, { uri: uri("/a/x.yml"), position: pos(5, 0) }, "next"),
-    ).toBe(0); // wraps because single element and not strictly-after
+      pickNextIndex(two, { uri: uri("/a/x.yml"), position: pos(5, 0) }, "next"),
+    ).toBe(1);
+    // And `previous` from exactly on the second finding lands on the
+    // first one — symmetric strict-comparison check.
+    expect(
+      pickNextIndex(
+        two,
+        { uri: uri("/a/x.yml"), position: pos(9, 0) },
+        "previous",
+      ),
+    ).toBe(0);
   });
 });

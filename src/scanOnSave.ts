@@ -36,6 +36,18 @@ export interface ScanOnSaveDeps {
   readonly shouldScanOnSave: (fsPath: string) => boolean;
   /** Scan the workspace. Receives no arguments — the handler always quiets. */
   readonly scan: () => Promise<unknown>;
+  /**
+   * Invoked when `scan()` rejects. Optional; defaults to silent. The
+   * handler is registered as a fire-and-forget `onDidSaveTextDocument`
+   * listener, so a rejection that escapes would surface only as an
+   * "unhandled promise rejection" in the extension-host log. Routing
+   * it through this hook lets the production wiring write a real log
+   * line to the Pipeline-Check output channel while the unit tests
+   * inject a capturing function. Background save-driven scans don't
+   * surface a toast on failure — interrupting a save flow with a
+   * modal is worse than the failure itself.
+   */
+  readonly onError?: (err: unknown) => void;
 }
 
 /**
@@ -48,6 +60,13 @@ export interface ScanOnSaveDeps {
  * scan. A storm-tail save that arrives after the scan finishes still
  * starts a fresh scan, which is the right semantics for cross-file
  * effects: we don't want to skip the LAST save of a storm.
+ *
+ * A `scan()` rejection releases the lock (so a transient failure
+ * doesn't silence the rest of the session) and routes the error
+ * through `deps.onError`. The handler never re-throws — VS Code
+ * doesn't await save listeners, so a propagated rejection would land
+ * as an unhandled rejection in the extension-host log instead of a
+ * useful breadcrumb the user can read.
  */
 export function createScanOnSaveHandler(
   deps: ScanOnSaveDeps,
@@ -63,6 +82,8 @@ export function createScanOnSaveHandler(
     busy = true;
     try {
       await deps.scan();
+    } catch (err) {
+      deps.onError?.(err);
     } finally {
       busy = false;
     }
