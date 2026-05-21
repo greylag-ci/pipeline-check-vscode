@@ -186,7 +186,18 @@ jobs:
         with:
           subject-path: ${{ env.VSIX_PATH }}
 
+      # The two registry publishes use `continue-on-error: true` so a
+      # transient failure in one registry doesn't strand the GitHub
+      # release. v1.0.2 hit exactly this: Open VSX returned an HTTP 405
+      # (registry-side hiccup) and `bash -e` aborted the job, which also
+      # skipped the release step — leaving the .vsix on Marketplace but
+      # no GitHub release for the tag. The final "Registry publish
+      # status" step below still marks the job red if either publish
+      # failed, so partial-success runs are visible in the run UI and
+      # to any branch-protection/notification wiring.
       - name: Publish to VS Code Marketplace
+        id: publish-vsce
+        continue-on-error: true
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
@@ -195,6 +206,8 @@ jobs:
             --pat "$VSCE_PAT"
 
       - name: Publish to Open VSX
+        id: publish-ovsx
+        continue-on-error: true
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: |
@@ -205,6 +218,15 @@ jobs:
             --pat "$OVSX_PAT"
 
       - name: Create GitHub release
+        # Run as long as at least one registry accepted the publish —
+        # that's the case where consumers need somewhere to download
+        # the .vsix from. If both registries failed, skip (no point
+        # shipping a release tied to a version nobody can install) and
+        # let the registry-status step below fail the job.
+        if: |
+          always() && !cancelled() &&
+          (steps.publish-vsce.outcome == 'success' ||
+           steps.publish-ovsx.outcome == 'success')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -212,3 +234,31 @@ jobs:
           gh release create "v${version}" "$VSIX_PATH" "$SBOM_PATH" $GH_PRERELEASE \
             --title "v${version}" \
             --notes-file <(awk '/^## \[/{n++} n==2{exit} n==1{print}' CHANGELOG.md)
+
+      - name: Registry publish status
+        # continue-on-error on the publish steps lets the workflow
+        # reach the GH release on partial success, but the job itself
+        # must still fail if any registry rejected the publish so the
+        # failure is visible in the run UI.
+        #
+        # Only run if at least one publish step actually executed — we
+        # check `conclusion` (the post-continue-on-error roll-up, which
+        # is 'success' for any step that ran, and 'skipped' for steps
+        # that didn't reach execution). This keeps the status check
+        # quiet on lint/test/audit failures upstream of publish.
+        if: |
+          always() && !cancelled() &&
+          (steps.publish-vsce.conclusion == 'success' ||
+           steps.publish-ovsx.conclusion == 'success')
+        env:
+          VSCE_OUTCOME: ${{ steps.publish-vsce.outcome }}
+          OVSX_OUTCOME: ${{ steps.publish-ovsx.outcome }}
+        run: |
+          set -euo pipefail
+          echo "VS Code Marketplace publish: $VSCE_OUTCOME"
+          echo "Open VSX publish:            $OVSX_OUTCOME"
+          if [ "$VSCE_OUTCOME" != "success" ] || [ "$OVSX_OUTCOME" != "success" ]; then
+            echo "::error::One or more registry publishes failed — see step logs above"
+            exit 1
+          fi
+          echo "Both registries accepted the publish."
