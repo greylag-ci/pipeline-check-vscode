@@ -11,6 +11,25 @@ versions follow [SemVer](https://semver.org/).
 > section **above** Unreleased, or remove the Unreleased block for the
 > release commit. Otherwise the GitHub release ships boilerplate.
 
+## [1.0.3] — 2026-05-21
+
+Recovery republish of v1.0.2 — Open VSX returned an HTTP 405 on
+the v1.0.2 publish step (transient registry-side failure; v1.0.1
+shipped unchanged 14 h earlier through the same code path).
+v1.0.2 reached the VS Code Marketplace but not Open VSX, and the
+"Create GitHub release" step short-circuited behind the failed
+publish. No source changes between v1.0.2 and v1.0.3; this tag
+exists solely to re-trigger the publish pipeline so Open VSX
+catches up with the Marketplace and the GitHub release for the
+1.0.x line is restored.
+
+### Changed
+
+- **Version bump only — no functional changes.** v1.0.2 is the
+  identical extension code; users on the VS Code Marketplace will
+  see a 1.0.2 → 1.0.3 update with no behavioural diff. Open VSX
+  users skip 1.0.2 entirely (none was ever published there).
+
 ## [1.0.2] — 2026-05-20
 
 Bug-fix batch on top of v1.0.1 — three review rounds turned up five
