@@ -2,7 +2,7 @@
   "name": "pipeline-check",
   "displayName": "Pipeline-Check",
   "description": "Lint CI/CD pipelines for 22 providers against OWASP Top 10 CI/CD Risks and 14 other compliance frameworks. 810+ rules, inline in your editor.",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "publisher": "greylag-ci",
   "license": "MIT",
   "icon": "icon.png",
@@ -89,8 +89,13 @@
       },
       {
         "view": "pipelineCheck.findings",
-        "when": "!pipelineCheck.lspReady",
+        "when": "!pipelineCheck.lspReady && !pipelineCheck.engineOutOfDate",
         "contents": "Pipeline-Check lints CI/CD configs against OWASP Top 10 CI/CD risks and 14 compliance frameworks. 810+ rules.\n\nIt needs a Python helper — `pipeline-check[lsp]` from PyPI — running locally.\n\n[Install in terminal](command:pipelineCheck.installInTerminal)\n[Retry connection](command:pipelineCheck.restart)\n\nAlready installed but still seeing this? [Open server log](command:pipelineCheck.showLog)."
+      },
+      {
+        "view": "pipelineCheck.findings",
+        "when": "pipelineCheck.engineOutOfDate",
+        "contents": "The installed `pipeline-check` engine is older than this extension requires.\n\nUpgrade it from PyPI:\n\n[Upgrade in terminal](command:pipelineCheck.upgradeInTerminal)\n[Retry connection](command:pipelineCheck.restart)\n\n[Open server log](command:pipelineCheck.showLog) for the version probe's output."
       }
     ],
     "commands": [
@@ -112,6 +117,11 @@
       {
         "command": "pipelineCheck.installInTerminal",
         "title": "Install LSP Server in Terminal",
+        "category": "Pipeline-Check"
+      },
+      {
+        "command": "pipelineCheck.upgradeInTerminal",
+        "title": "Upgrade LSP Server in Terminal",
         "category": "Pipeline-Check"
       },
       {
@@ -154,6 +164,12 @@
         "icon": "$(filter)"
       },
       {
+        "command": "pipelineCheck.findings.toggleSeverity",
+        "title": "Show / Hide Severities",
+        "category": "Pipeline-Check",
+        "icon": "$(eye)"
+      },
+      {
         "command": "pipelineCheck.goToNextFinding",
         "title": "Go to Next Finding",
         "category": "Pipeline-Check"
@@ -189,9 +205,14 @@
           "group": "navigation@1"
         },
         {
-          "command": "pipelineCheck.findings.changeGrouping",
+          "command": "pipelineCheck.findings.toggleSeverity",
           "when": "view == pipelineCheck.findings",
           "group": "navigation@2"
+        },
+        {
+          "command": "pipelineCheck.findings.changeGrouping",
+          "when": "view == pipelineCheck.findings",
+          "group": "navigation@3"
         },
         {
           "command": "pipelineCheck.findings.refresh",

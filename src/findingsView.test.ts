@@ -11,11 +11,39 @@ vi.mock("vscode", async () => {
 
 // Import after the mock is registered.
 import { resetStubState } from "./__testStubs__/vscode";
-import { FindingsTreeProvider } from "./findingsView";
+import { FindingsTreeProvider, SEVERITY_ORDER } from "./findingsView";
 
-const ctx = {
-  subscriptions: [] as Array<{ dispose: () => void }>,
-} as unknown as import("vscode").ExtensionContext;
+// Per-test workspaceState fixture: a simple in-memory Memento that
+// records `update` calls and serves `get` from the same map. Each
+// test gets a fresh one via `freshContext()` so persistence
+// assertions are isolated. The cast to `ExtensionContext` is the
+// standard "only fill what the SUT touches" pattern.
+function freshContext(): {
+  ctx: import("vscode").ExtensionContext;
+  state: Record<string, unknown>;
+} {
+  const state: Record<string, unknown> = {};
+  const ctx = {
+    subscriptions: [] as Array<{ dispose: () => void }>,
+    workspaceState: {
+      get<T>(key: string, fallback?: T): T | undefined {
+        return (key in state ? state[key] : fallback) as T | undefined;
+      },
+      async update(key: string, value: unknown): Promise<void> {
+        state[key] = value;
+      },
+      keys(): readonly string[] {
+        return Object.keys(state);
+      },
+    },
+  } as unknown as import("vscode").ExtensionContext;
+  return { ctx, state };
+}
+
+// Back-compat shim for the existing tests that read `ctx` from the
+// outer scope. Each new test should call `freshContext()` directly
+// when it wants to assert on persisted state.
+const ctx = freshContext().ctx;
 
 // `vscode.languages.getDiagnostics()` returns `[uri, diagnostic[]][]`.
 // We build that shape from a compact (severity, file, rule) triple so
@@ -608,5 +636,265 @@ describe("FindingsTreeProvider — filter", () => {
 
     p.setFilter("GHA");
     expect((view.badge as { value: number }).value).toBe(2);
+  });
+});
+
+describe("FindingsTreeProvider — hidden severities", () => {
+  // The panel-only severity filter lets a user mute MEDIUM while
+  // triaging CRITICAL without touching the editor-wide
+  // `severityThreshold` setting. State persists per workspace via
+  // workspaceState so the choice survives a window reload.
+
+  function countLeaves(roots: ReturnType<FindingsTreeProvider["getChildren"]>): number {
+    let n = 0;
+    for (const r of roots) {
+      if (r.kind === "group") n += r.children.length;
+    }
+    return n;
+  }
+
+  it("defaults to showing every severity (getHiddenSeverities returns an empty set)", () => {
+    const { ctx: ctx0 } = freshContext();
+    const p = new FindingsTreeProvider(ctx0);
+    expect(p.getHiddenSeverities().size).toBe(0);
+  });
+
+  it("setHiddenSeverities filters those severities out of the tree", () => {
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "CRITICAL" },
+      { file: "b.yml", rule: "GHA-002", severity: "MEDIUM" },
+      { file: "c.yml", rule: "GHA-003", severity: "LOW" },
+    ]);
+    const { ctx: ctx0 } = freshContext();
+    const p = new FindingsTreeProvider(ctx0);
+    p.setGroupMode("severity");
+    expect(countLeaves(p.getChildren())).toBe(3);
+
+    p.setHiddenSeverities(new Set(["MEDIUM", "LOW"]));
+    const visible = p.getChildren();
+    expect(visible.map((g) => (g.kind === "group" ? g.label : ""))).toEqual([
+      "CRITICAL",
+    ]);
+    expect(countLeaves(visible)).toBe(1);
+  });
+
+  it("hidden-severity filter composes with the substring filter", () => {
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "CRITICAL" },
+      { file: "b.yml", rule: "GLI-002", severity: "CRITICAL" },
+      { file: "c.yml", rule: "GHA-003", severity: "MEDIUM" },
+    ]);
+    const { ctx: ctx0 } = freshContext();
+    const p = new FindingsTreeProvider(ctx0);
+    p.setGroupMode("severity");
+    p.setHiddenSeverities(new Set(["MEDIUM"]));
+    p.setFilter("GHA");
+    // Two CRITICALs survive, one MEDIUM excluded by severity, one
+    // CRITICAL excluded by substring = 1 visible.
+    expect(countLeaves(p.getChildren())).toBe(1);
+  });
+
+  it("setHiddenSeverities persists the choice via workspaceState", () => {
+    const { ctx: ctx0, state } = freshContext();
+    const p = new FindingsTreeProvider(ctx0);
+    p.setHiddenSeverities(new Set(["LOW", "INFO"]));
+    expect(state["pipelineCheck.findings.hiddenSeverities"]).toEqual([
+      "LOW",
+      "INFO",
+    ]);
+  });
+
+  it("constructor restores the persisted hidden-severity set", () => {
+    const { ctx: ctx0, state } = freshContext();
+    state["pipelineCheck.findings.hiddenSeverities"] = ["HIGH", "INFO"];
+    const p = new FindingsTreeProvider(ctx0);
+    expect([...p.getHiddenSeverities()].sort()).toEqual(["HIGH", "INFO"]);
+  });
+
+  it("constructor drops unknown persisted severities silently", () => {
+    // Forward/back-compat: a future severity rename or a hand-edited
+    // value should not blank the tree. Anything not in SEVERITY_ORDER
+    // is dropped at load time.
+    const { ctx: ctx0, state } = freshContext();
+    state["pipelineCheck.findings.hiddenSeverities"] = [
+      "LOW",
+      "BOGUS",
+      "ALSO_NOT_REAL",
+    ];
+    const p = new FindingsTreeProvider(ctx0);
+    expect([...p.getHiddenSeverities()]).toEqual(["LOW"]);
+  });
+
+  it("setHiddenSeverities with the same set is a no-op (no refresh storm)", () => {
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "HIGH" },
+    ]);
+    const { ctx: ctx0 } = freshContext();
+    const p = new FindingsTreeProvider(ctx0);
+    let fires = 0;
+    p.onDidChangeTreeData(() => {
+      fires += 1;
+    });
+    p.setHiddenSeverities(new Set(["LOW"]));
+    expect(fires).toBe(1);
+    p.setHiddenSeverities(new Set(["LOW"]));
+    expect(fires).toBe(1); // unchanged
+    p.setHiddenSeverities(new Set(["LOW", "INFO"]));
+    expect(fires).toBe(2);
+  });
+
+  it("getHiddenSeverities returns a defensive copy", () => {
+    const { ctx: ctx0 } = freshContext();
+    const p = new FindingsTreeProvider(ctx0);
+    p.setHiddenSeverities(new Set(["LOW"]));
+    const copy = p.getHiddenSeverities();
+    copy.add("CRITICAL");
+    // Mutating the returned set must not change the provider's state.
+    expect([...p.getHiddenSeverities()]).toEqual(["LOW"]);
+  });
+
+  it("badge tracks visible-after-severity-filter count", () => {
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "CRITICAL" },
+      { file: "b.yml", rule: "GHA-002", severity: "MEDIUM" },
+      { file: "c.yml", rule: "GHA-003", severity: "LOW" },
+    ]);
+    const { ctx: ctx0 } = freshContext();
+    const p = new FindingsTreeProvider(ctx0);
+    const view: { badge: unknown } & object = { badge: undefined };
+    p.setTreeView(view as unknown as Parameters<typeof p.setTreeView>[0]);
+    expect((view.badge as { value: number }).value).toBe(3);
+
+    p.setHiddenSeverities(new Set(["MEDIUM", "LOW"]));
+    expect((view.badge as { value: number }).value).toBe(1);
+  });
+
+  it("SEVERITY_ORDER export is what the toggle Quick Pick consumes", () => {
+    // Pinning the order so the Quick Pick stays user-recognisable
+    // (CRITICAL first, INFO last). The toggle command in
+    // extension.ts iterates over this list.
+    expect([...SEVERITY_ORDER]).toEqual([
+      "CRITICAL",
+      "HIGH",
+      "MEDIUM",
+      "LOW",
+      "INFO",
+    ]);
+  });
+});
+
+describe("FindingsTreeProvider — filter composition edge cases", () => {
+  // Severity-hide and substring-filter compose in `applyFilter`. These
+  // tests pin the interactions that matter for triage UX: a rule whose
+  // entire population is in a hidden severity should disappear from
+  // every grouping mode; an empty workspace after filtering should
+  // render as nothing (no empty-group ghost rows).
+
+  it("hiding all severities of a rule removes its bucket from group-by-rule", () => {
+    // A rule with two HIGH findings — hide HIGH → the rule bucket
+    // vanishes entirely (no empty-group skeleton left behind).
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "HIGH" },
+      { file: "b.yml", rule: "GHA-001", severity: "HIGH" },
+      { file: "c.yml", rule: "GHA-002", severity: "LOW" },
+    ]);
+    const { ctx: ctx0 } = freshContext();
+    const p = new FindingsTreeProvider(ctx0);
+    p.setGroupMode("rule");
+    expect(p.getChildren().map((g) => (g.kind === "group" ? g.label : ""))).toEqual([
+      "GHA-001",
+      "GHA-002",
+    ]);
+    p.setHiddenSeverities(new Set(["HIGH"]));
+    expect(p.getChildren().map((g) => (g.kind === "group" ? g.label : ""))).toEqual([
+      "GHA-002",
+    ]);
+  });
+
+  it("hiding all severities of a file removes its bucket from group-by-file", () => {
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "HIGH" },
+      { file: "b.yml", rule: "GHA-002", severity: "MEDIUM" },
+    ]);
+    const { ctx: ctx0 } = freshContext();
+    const p = new FindingsTreeProvider(ctx0);
+    p.setGroupMode("file");
+    expect(p.getChildren()).toHaveLength(2);
+    p.setHiddenSeverities(new Set(["MEDIUM"]));
+    const buckets = p.getChildren();
+    expect(buckets).toHaveLength(1);
+    expect(buckets[0].kind === "group" && buckets[0].label).toBe("a.yml");
+  });
+
+  it("hiding every severity in the workspace renders an empty tree", () => {
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "HIGH" },
+      { file: "b.yml", rule: "GHA-002", severity: "LOW" },
+    ]);
+    const { ctx: ctx0 } = freshContext();
+    const p = new FindingsTreeProvider(ctx0);
+    p.setHiddenSeverities(
+      new Set(["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]),
+    );
+    expect(p.getChildren()).toEqual([]);
+  });
+
+  it("substring filter that matches only hidden-severity findings yields an empty tree", () => {
+    // The substring filter narrows to GHA-001, but GHA-001 is HIGH
+    // and HIGH is hidden → no leaves left, no group buckets either.
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "HIGH" },
+      { file: "b.yml", rule: "GHA-002", severity: "LOW" },
+    ]);
+    const { ctx: ctx0 } = freshContext();
+    const p = new FindingsTreeProvider(ctx0);
+    p.setHiddenSeverities(new Set(["HIGH"]));
+    p.setFilter("GHA-001");
+    expect(p.getChildren()).toEqual([]);
+  });
+
+  it("substring filter and severity-hide together do not double-count in the badge", () => {
+    // Three findings: two filtered out by substring, one by severity.
+    // Badge must be 1 (the LOW-severity GHA-001), not 2 (counting the
+    // GHA-001 once per filter pass).
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "LOW" },
+      { file: "b.yml", rule: "GHA-001", severity: "HIGH" },
+      { file: "c.yml", rule: "GLI-002", severity: "LOW" },
+    ]);
+    const { ctx: ctx0 } = freshContext();
+    const p = new FindingsTreeProvider(ctx0);
+    const view: { badge: unknown } & object = { badge: undefined };
+    p.setTreeView(view as unknown as Parameters<typeof p.setTreeView>[0]);
+    expect((view.badge as { value: number }).value).toBe(3);
+    p.setFilter("GHA");
+    p.setHiddenSeverities(new Set(["HIGH"]));
+    expect((view.badge as { value: number }).value).toBe(1);
+  });
+
+  it("max-severity icon on a rule group reflects the visible-only severity, not the hidden one", () => {
+    // A rule with one CRITICAL + four LOW findings should render with
+    // the FLAME icon. Once CRITICAL is hidden, the same rule's icon
+    // should drop to LOW's blue circle — the bucket's max-severity
+    // computation runs over the FILTERED list, not the raw one.
+    setStubDiagnostics([
+      { file: "a.yml", rule: "GHA-001", severity: "CRITICAL" },
+      { file: "b.yml", rule: "GHA-001", severity: "LOW" },
+      { file: "c.yml", rule: "GHA-001", severity: "LOW" },
+    ]);
+    const { ctx: ctx0 } = freshContext();
+    const p = new FindingsTreeProvider(ctx0);
+    p.setGroupMode("rule");
+    {
+      const root = p.getChildren()[0];
+      const icon = root.kind === "group" ? root.icon : undefined;
+      expect((icon as { id: string }).id).toBe("flame");
+    }
+    p.setHiddenSeverities(new Set(["CRITICAL"]));
+    {
+      const root = p.getChildren()[0];
+      const icon = root.kind === "group" ? root.icon : undefined;
+      expect((icon as { id: string }).id).toBe("info");
+    }
   });
 });

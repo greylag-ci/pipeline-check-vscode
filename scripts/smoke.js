@@ -19,12 +19,27 @@ const Module = require("module");
 // just inside a function — must be declared here, because esbuild's
 // `__toESM` namespace wrapper enumerates own keys at load time and a
 // Proxy's dynamic get is invisible to that enumeration. The two below
-// come from findingsView.ts's top-level SEVERITY_ICON table.
+// come from findingsView.ts's top-level SEVERITY_ICON table; the
+// CodeActionKind constant is consumed by codeActions.ts's static
+// `providedCodeActionKinds = [vscode.CodeActionKind.QuickFix]` field
+// initializer — the Proxy default of "return a class" would resolve
+// `vscode.CodeActionKind` to a class with no `.QuickFix` property and
+// crash the load.
 class StubThemeIcon {}
 class StubThemeColor {}
 const known = {
   ThemeIcon: StubThemeIcon,
   ThemeColor: StubThemeColor,
+  CodeActionKind: {
+    QuickFix: { value: "quickfix" },
+    Empty: { value: "" },
+    Refactor: { value: "refactor" },
+    RefactorExtract: { value: "refactor.extract" },
+    RefactorInline: { value: "refactor.inline" },
+    RefactorRewrite: { value: "refactor.rewrite" },
+    Source: { value: "source" },
+    SourceOrganizeImports: { value: "source.organizeImports" },
+  },
   commands: {
     registerCommand: () => ({ dispose: () => undefined }),
   },

@@ -166,12 +166,15 @@ describe("composeMessage", () => {
     expect(composeMessage("0.2.0")).toContain("0.2.0");
   });
 
-  it("mentions every new headline surface", () => {
-    const msg = composeMessage("0.2.0");
-    expect(msg).toContain("Findings panel");
-    expect(msg).toContain("status bar");
-    expect(msg).toContain("CodeLens");
-    expect(msg).toContain("Alt+F8");
+  it("invites the user to read the release notes", () => {
+    // The toast pairs this prose with a `See release notes` action
+    // button — the action's destination is per-version, so the prose
+    // stays generic and ages without per-release maintenance. Pin
+    // the "see what changed" call-to-action so a future edit that
+    // strips it (and the implicit pointer to the release notes) gets
+    // a loud signal.
+    const msg = composeMessage("1.1.0");
+    expect(msg.toLowerCase()).toContain("see what changed");
   });
 });
 

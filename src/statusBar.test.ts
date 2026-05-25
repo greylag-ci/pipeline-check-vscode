@@ -11,12 +11,14 @@ vi.mock("vscode", async () => {
 
 import { resetStubState } from "./__testStubs__/vscode";
 import {
+  _getEngineVersionForTesting,
   countDiagnostics,
   formatStatusBarAccessibilityLabel,
   formatStatusBarText,
   formatStatusBarTooltip,
   pickBackgroundColor,
   registerStatusBar,
+  setEngineVersion,
 } from "./statusBar";
 
 // Helpers
@@ -39,6 +41,9 @@ const uri = (path: string) => ({
 
 beforeEach(() => {
   resetStubState();
+  // Reset the module-level engine-version slot so a test that sets it
+  // doesn't leak into the next case's tooltip assertions.
+  setEngineVersion(undefined);
 });
 
 describe("formatStatusBarText", () => {
@@ -130,6 +135,67 @@ describe("formatStatusBarTooltip", () => {
       INFO: 0,
     });
     expect(tip).not.toContain("Alt+F8");
+  });
+
+  it("appends 'Engine vX.Y.Z' when a version is supplied", () => {
+    const tip = formatStatusBarTooltip(
+      { CRITICAL: 1, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 },
+      "1.2.3",
+    );
+    expect(tip).toContain("Engine v1.2.3");
+    // Engine line is the LAST line so the keyboard-shortcut hint
+    // sits visually above it (more important to most users).
+    const lines = tip.split("\n");
+    expect(lines[lines.length - 1]).toBe("Engine v1.2.3");
+  });
+
+  it("omits the engine line when no version is supplied", () => {
+    const tip = formatStatusBarTooltip({
+      CRITICAL: 1,
+      HIGH: 0,
+      MEDIUM: 0,
+      LOW: 0,
+      INFO: 0,
+    });
+    expect(tip).not.toContain("Engine v");
+  });
+
+  it("includes the engine line on a clean workspace too", () => {
+    // The "no findings" branch took an early-return before; pin the
+    // post-refactor behaviour that still appends the engine line so
+    // the version is visible without waiting for a finding to land.
+    const tip = formatStatusBarTooltip(
+      { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 },
+      "1.2.3",
+    );
+    expect(tip).toContain("Pipeline-Check: no findings");
+    expect(tip).toContain("Engine v1.2.3");
+    // No Alt+F8 hint on a clean tooltip — there's nothing to step
+    // through, the hint would only confuse.
+    expect(tip).not.toContain("Alt+F8");
+  });
+});
+
+describe("setEngineVersion", () => {
+  it("stores the latest value and serves it back", () => {
+    setEngineVersion("1.2.3");
+    expect(_getEngineVersionForTesting()).toBe("1.2.3");
+    setEngineVersion("1.2.4");
+    expect(_getEngineVersionForTesting()).toBe("1.2.4");
+  });
+
+  it("clears with undefined (used on stopClient)", () => {
+    setEngineVersion("1.2.3");
+    setEngineVersion(undefined);
+    expect(_getEngineVersionForTesting()).toBeUndefined();
+  });
+
+  it("survives being called before registerStatusBar (no rerender wired yet)", () => {
+    // Tests run in any order; setEngineVersion must not throw if the
+    // module hasn't been wired yet. The value is captured and shows
+    // up the next time registerStatusBar paints.
+    expect(() => setEngineVersion("0.5.0")).not.toThrow();
+    expect(_getEngineVersionForTesting()).toBe("0.5.0");
   });
 });
 

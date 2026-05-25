@@ -11,30 +11,25 @@
 
 Lint CI/CD pipelines for 22 providers against OWASP Top 10 CI/CD Risks and 14 other compliance frameworks. 810+ rules, inline in your editor: severity-graded gutter squiggles, hover descriptions with `--explain` prose, and recommended-action hints. Built on the same rule registry as the [pipeline-check](https://github.com/dmartinochoa/pipeline-check) CLI, so editor findings match `pipeline_check --output json` byte-for-byte (modulo position translation).
 
-<!--
-Once docs/screenshots/01-inline.png, 02-findings-panel.png,
-03-hover.png, and 04-status-bar.png exist, uncomment the block below.
-See docs/screenshots/README.md for the capture recipe. The marketplace
-listing renders these via GitHub's raw blob URL, so they don't need
-to ship inside the .vsix.
+![Editor window with the Findings panel grouped by severity, gutter squiggles on the open workflow file, the activity-bar badge showing six findings, and a diagnostic hover tooltip](docs/screenshots/01-inline-findings.png)
 
-![Inline findings in the editor gutter](docs/screenshots/01-inline.png)
+![Zoomed hover on a finding showing the rule title, the --explain prose, the Fix recommendation, and a link to the rule documentation](docs/screenshots/02-hover-detail.png)
 
-![Findings panel in the activity bar, grouped by severity](docs/screenshots/02-findings-panel.png)
+![Change Grouping Quick Pick offering Severity, File, and Rule modes](docs/screenshots/03-change-grouping.png)
 
-![Hover tooltip showing problem, description, and rule docs link](docs/screenshots/03-hover.png)
-
-![Status bar item showing the per-severity tally](docs/screenshots/04-status-bar.png)
--->
+![Show / Hide Severities Quick Pick with checkboxes for CRITICAL, HIGH, MEDIUM, LOW, and INFO, each labelled with a one-line description](docs/screenshots/04-severity-filter.png)
 
 ## Features
 
 - **Inline diagnostics** — gutter squiggles + the Problems panel get a row per finding, severity-graded so CRITICAL and HIGH read red, MEDIUM yellow, LOW info-blue. Hover shows the rule title, the `--explain` prose, and a link to the rule documentation.
 - **Findings panel** — dedicated slot in the activity bar with a Pipeline-Check pipeline glyph. Re-groups findings by **severity** (default), **file**, or **rule** via the title-bar **Change Grouping** button; activity-bar icon carries a live count badge.
-- **Status bar item** — bottom-left of the window, shows the top two severity counts at a glance (e.g. `🛡 3C 1H`). Click reveals the Findings panel.
+- **Per-panel severity filter** — title-bar **Show / Hide Severities** button lets you mute MEDIUM while triaging CRITICAL without changing the editor-wide `severityThreshold` setting. State persists per workspace.
+- **Quick-fix lightbulb** — every finding carries a lightbulb with **Open `<RULE-ID>` documentation**, **Copy rule ID**, and **Show in Findings panel** — useful for triage without round-tripping through the panel.
+- **Status bar item** — bottom-left of the window, shows the top two severity counts at a glance (e.g. `🛡 3C 1H`). Tooltip carries the engine version so you know which `pipeline_check` install is talking to the editor. Click reveals the Findings panel.
 - **CodeLens summary** — every scanned file carries a `Pipeline-Check: 2 critical · 1 high` lens at line 1. Click navigates to the Findings panel.
 - **Keyboard navigation** — `Alt+F8` / `Shift+Alt+F8` jump between findings, with wrap at both ends. Mirrors VS Code's `F8` for "next problem" so muscle memory carries over.
 - **Tunable signal** — `pipelineCheck.severityThreshold` quiets the editor surface (`low` / `medium` / `high` / `critical`) without restarting the server; `pipelineCheck.disabledProviders` silences whole providers in a monorepo where Pipeline-Check would otherwise lint files belonging to a sub-project.
+- **Fast-fail engine check** — when the LSP fails to import the Python engine, the extension surfaces the install / upgrade action in under a second instead of waiting out the 30-second start ceiling. Engines below the extension's minimum required version get a dedicated **Upgrade in terminal** prompt.
 
 ## What it scans
 
@@ -57,7 +52,26 @@ Multi-file and context-heavy providers (Kubernetes, Helm, Terraform plans, live 
 
 ## Install
 
-Search for `Pipeline-Check` in the extensions panel, or install from the command line:
+Pipeline-Check ships as **two pieces** that talk to each other over stdio:
+
+1. **Python rule engine** — the linter itself, installed from PyPI.
+2. **VS Code extension** — a thin LSP client (this repo) that spawns the engine and surfaces its findings in the editor.
+
+You need both. The extension does no scanning on its own; if the engine isn't installed, the Findings panel shows an **Install in terminal** button that runs the command below for you.
+
+### 1. Install the Python engine
+
+Requires Python 3.11+ on `PATH`:
+
+```bash
+python -m pip install "pipeline-check[lsp]"
+```
+
+If `pipeline_check` lives in a virtualenv or under `python3` rather than `python`, point [`pipelineCheck.serverCommand`](#configuration) at an absolute interpreter path.
+
+### 2. Install the extension
+
+Requires VS Code 1.85+. Search for `Pipeline-Check` in the extensions panel, or install from the command line:
 
 ```bash
 # Microsoft VS Code Marketplace
@@ -67,16 +81,9 @@ code --install-extension greylag-ci.pipeline-check
 codium --install-extension greylag-ci.pipeline-check
 ```
 
-The extension is a thin LSP client; the rule engine itself runs in Python and must be installed separately:
+### 3. Verify
 
-```bash
-python -m pip install "pipeline-check[lsp]"
-```
-
-## Requirements
-
-- VS Code 1.85 or newer.
-- Python 3.11 or newer on `PATH`, with `pipeline-check[lsp]` installed.
+Open any supported config file (see [What it scans](#what-it-scans)) — findings appear inline within a second or two, and the status bar shows a `🛡` tally. If you see `🛡 LSP not ready` instead, run **Pipeline-Check: Show language server output** from the Command Palette; the most common cause is `serverCommand` pointing at an interpreter that doesn't have `pipeline_check` installed.
 
 ## Configuration
 
@@ -96,9 +103,14 @@ All commands appear in the Command Palette under the **Pipeline-Check** category
 |---|---|
 | **Restart language server** — kills and respawns the LSP process |  |
 | **Show language server output** — focuses the output channel (LSP server logs + `[client]` client-side breadcrumbs) |  |
+| **Install LSP Server in Terminal** — opens a terminal with the `pip install` command typed but not executed |  |
+| **Upgrade LSP Server in Terminal** — same flow with `pip install --upgrade` for an out-of-date engine |  |
 | **Go to Next Finding** | <kbd>Alt</kbd>+<kbd>F8</kbd> |
 | **Go to Previous Finding** | <kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>F8</kbd> |
+| **Scan Workspace** — opens every candidate file so the LSP runs `didOpen` on each |  |
 | **Change Grouping** (Findings view) — Quick Pick: Severity / File / Rule |  |
+| **Show / Hide Severities** (Findings view) — multi-select Quick Pick that mutes severity levels in the panel only (editor surface unchanged) |  |
+| **Filter Findings** (Findings view) — substring filter on rule ID, message, or path |  |
 | **Refresh** (Findings view) — re-render from the current diagnostic stream |  |
 
 ## Workspace trust

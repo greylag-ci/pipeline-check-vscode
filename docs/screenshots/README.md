@@ -1,24 +1,38 @@
 # Marketplace screenshots
 
-Three PNGs go in this directory; the main `README.md` already has
-references to them, commented out. Once the files exist, uncomment
-the block and the marketplace listing picks them up automatically
-(vsce rewrites relative paths to the GitHub raw blob URL).
+Four PNGs ship today; the main `README.md` references them directly.
+The marketplace listing renders relative image paths through GitHub's
+raw blob URL, so the PNGs don't need to ship inside the `.vsix` —
+[.vscodeignore](../../.vscodeignore) excludes `docs/**` for that
+reason.
+
+## Currently shipping (v1.1.0)
 
 | Filename | What it shows |
 |---|---|
-| `01-inline.png` | Editor view of `test-fixtures/sample-workflow/release.yml` with all four GHA squiggles in the gutter. |
-| `02-problems-panel.png` | The Problems panel with the four diagnostics. Each rule ID is a hyperlink now that `codeDescription.href` is wired. Capture one ID under hover state so the underline is visible. |
-| `03-hover.png` | Hover tooltip on one diagnostic showing title, description, and the `Fix:` recommendation. |
+| `01-inline-findings.png` | Full editor window with the Findings panel grouped by severity, gutter squiggles on the open workflow, activity-bar badge showing the live count, and a hover tooltip on one diagnostic. The "hero" shot — proves the whole-product story in one frame. |
+| `02-hover-detail.png` | Zoomed hover on a single diagnostic — title, `--explain` prose, `Fix:` recommendation, and the `pipeline-check(GHA-XXX)` documentation link. |
+| `03-change-grouping.png` | The **Change Grouping** Quick Pick showing Severity / File / Rule. |
+| `04-severity-filter.png` | The new **Show / Hide Severities** Quick Pick — landed in v1.1.0. Multi-select with one-line descriptions per severity. |
+
+## Slots still open
+
+Two v1.1.0 surfaces aren't yet shown. Capture and drop in when
+convenient; the README block will need a matching `![alt](path)` line
+added underneath the existing four:
+
+| Filename | What it shows |
+|---|---|
+| `05-status-bar.png` | Status-bar shield with the per-severity tally (e.g. `🛡 3C 1H`) AND the tooltip open, including the trailing `Engine v0.X.Y` line. Proves the engine-version surface. |
+| `06-quickfix-lightbulb.png` | The CodeAction lightbulb dropdown on a finding, showing **Open `<RULE-ID>` documentation / Copy rule ID / Show in Pipeline-Check Findings panel**. The triage-ergonomics shot. |
 
 ## How to capture
 
 1. From the vscode repo root: `npm run compile`.
 2. Press <kbd>F5</kbd>, pick the **Run Extension (sample workflow)** debug profile.
-3. In the extension-host window, open `release.yml` (the fixture auto-opens with that profile).
-4. Wait for the four diagnostics to publish (~half a second).
-5. Take the three screenshots described above and save them in this directory with the filenames in the table.
-6. Open the main `README.md` and uncomment the `<!-- screenshot block -->` to surface them on the listing.
+3. In the extension-host window, `release.yml` auto-opens. Wait ~1s for the diagnostics to publish.
+4. Take each screenshot per the table above and save into this directory with the matching filename.
+5. Open the main `README.md` and add an `![alt](docs/screenshots/<filename>.png)` line into the screenshot block for any new captures.
 
 ## Capture settings
 

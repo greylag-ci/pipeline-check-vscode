@@ -11,6 +11,105 @@ versions follow [SemVer](https://semver.org/).
 > section **above** Unreleased, or remove the Unreleased block for the
 > release commit. Otherwise the GitHub release ships boilerplate.
 
+## [1.1.0] — 2026-05-25
+
+Feature batch on top of v1.0.3. Three user-visible additions plus
+infrastructure for a fourth: a Findings-panel severity quick-filter
+(mute MEDIUM while triaging CRITICAL without touching the editor-wide
+threshold setting), a quick-fix lightbulb on every diagnostic (Open
+docs / Copy rule ID / Reveal in panel), and a fast-fail engine
+preflight that surfaces the install or upgrade action in under a
+second instead of waiting out the 30-second LSP start ceiling. The
+status-bar tooltip now carries the engine version so users can
+confirm at a glance which `pipeline-check` install is talking to the
+editor. Test count: 254 → 329 (75 new) across the new and extended
+suites — severity filter, code actions, preflight, version compare,
+upgrade flow, status-bar tooltip, lspState.
+
+### Added
+
+- **Per-panel severity quick-filter.** New title-bar **Show / Hide
+  Severities** button opens a multi-select Quick Pick; unchecked
+  severities are hidden from the Findings panel only. The editor
+  surface (gutter, Problems panel, CodeLens) is unaffected — the
+  filter is for triage, not for muting the project. State persists
+  per workspace via `workspaceState`. Composes with the existing
+  substring filter; both are dropped when their condition clears.
+- **Quick-fix lightbulb on every Pipeline-Check diagnostic.**
+  Rule-agnostic actions land on every finding the lightbulb attaches
+  to: **Open `<RULE-ID>` documentation** (when the server published
+  `Diagnostic.code.target`), **Copy rule ID** (routes through the
+  same code path as the panel's context-menu entry), and **Show in
+  Pipeline-Check Findings panel** (always available). No CodeAction
+  mutates the file — they're discoverability surfaces, not
+  auto-fixes.
+- **Fast-fail engine preflight.** Before `LanguageClient.start()`
+  spawns the LSP, a 5-second probe runs
+  `import pipeline_check; print(importlib.metadata.version(...))`
+  on the configured interpreter. A missing install fires the install
+  toast in under a second instead of the 30-second LSP start
+  ceiling. An out-of-date install (engine version below
+  `MIN_ENGINE_VERSION`) routes to a dedicated **Upgrade in terminal**
+  CTA instead of the generic install path. The probe is gated to
+  the default `python -m pipeline_check.lsp` shape so custom wrapper
+  scripts skip the check (`shouldPreflight` returns `false`) and
+  fall back to the existing start-timeout behavior.
+- **Engine version in the status-bar tooltip.** The captured version
+  appears as a trailing `Engine vX.Y.Z` line on hover. Useful for
+  triaging "why isn't this rule firing?" reports across people on
+  different upstream versions. Cleared on `stopClient()` and on the
+  mid-session `State.Stopped` transition so the tooltip stops
+  claiming a server is connected after a crash.
+- **`pipelineCheck.upgradeInTerminal` command + welcome panel
+  variant.** New command runs
+  `python -m pip install --upgrade "pipeline-check[lsp]"` in a
+  dedicated `Pipeline-Check upgrade` terminal (typed but not
+  auto-executed, matching the install-command pattern). When the
+  preflight rejects with `reason="out_of_date"`, the new
+  `pipelineCheck.engineOutOfDate` context key flips, and the
+  Findings panel switches to a third welcome entry that promotes
+  **Upgrade in terminal** as its primary CTA. The toast and the
+  panel surface the same action so a user who dismisses the toast
+  can still find it.
+
+### Changed
+
+- **README: Install section rewritten** as a numbered two-step flow
+  ("install the Python engine, then install the extension") so
+  first-timers can't skip the engine. Version requirements moved
+  inline with each step; the standalone Requirements section is
+  gone. A new "Verify" step points readers at the `🛡` status-bar
+  tally and the `Pipeline-Check: Show language server output`
+  command for the case where it doesn't appear. The Commands table
+  was also extended to list the two new commands and the
+  severity-toggle entry.
+- **`What's new` toast copy is now generic.** Previously it
+  hard-coded the v1.0.0 surfaces (Findings panel, status bar,
+  CodeLens, Alt+F8); the prose was stale the moment 1.0.1 shipped.
+  The toast now says `Pipeline-Check ${version} is here. See what
+  changed?` and the **See release notes** action does the
+  version-specific work. One less thing to remember to update per
+  release.
+
+### Infrastructure
+
+- **`MIN_ENGINE_VERSION = "1.0.0"`** in
+  [src/preflight.ts](src/preflight.ts) is the new floor the preflight
+  asserts. Anyone on a 0.x install sees the **Upgrade in terminal**
+  CTA on next launch; every 1.0.x install passes through unchanged.
+  The extension's stable contract with the engine — reading
+  `Diagnostic.code.target` (rule-docs URL) and `data.severity` (panel
+  grouping) from publishes — has held across the 1.x line, so the
+  floor is the same as the 1.x major. **Maintainer note:** bump
+  patch/minor here when the extension starts depending on a newer
+  field; the change forces the upgrade prompt for users behind the
+  new floor and deserves its own CHANGELOG entry.
+- **`isAtLeast` / `parseVersion`** helpers in preflight handle the
+  PEP 440 / SemVer shapes pipeline-check ships (numeric
+  MAJOR.MINOR.PATCH plus occasional rc / dev tails). Pre-releases
+  rank BELOW the corresponding release per spec, so `1.2.3rc1` does
+  not satisfy a `MIN_ENGINE_VERSION = "1.2.3"` assertion.
+
 ## [1.0.3] — 2026-05-21
 
 Recovery republish of v1.0.2 — Open VSX returned an HTTP 405 on

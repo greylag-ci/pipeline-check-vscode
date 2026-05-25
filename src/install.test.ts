@@ -8,8 +8,10 @@ vi.mock("vscode", async () => {
 import { resetStubState } from "./__testStubs__/vscode";
 import {
   PIP_INSTALL_COMMAND,
+  PIP_UPGRADE_COMMAND,
   copyInstallCommandToClipboard,
   installInTerminal,
+  upgradeInTerminal,
 } from "./install";
 
 beforeEach(() => {
@@ -175,5 +177,67 @@ describe("copyInstallCommandToClipboard", () => {
   it("never opens a terminal (separate code path)", async () => {
     await copyInstallCommandToClipboard();
     expect(globalThis.__stubCalls?.terminals).toEqual([]);
+  });
+});
+
+describe("PIP_UPGRADE_COMMAND", () => {
+  // The upgrade command is the load-bearing string for the
+  // "out_of_date" preflight branch. A typo would silently leave users
+  // on the old engine.
+
+  it("is the install command with --upgrade injected", () => {
+    expect(PIP_UPGRADE_COMMAND).toBe(
+      'python -m pip install --upgrade "pipeline-check[lsp]"',
+    );
+  });
+
+  it("targets the same [lsp] extra the install command does", () => {
+    // If install and upgrade target different extras, a user who
+    // upgraded would lose pieces they had installed at install time.
+    expect(PIP_UPGRADE_COMMAND).toContain('"pipeline-check[lsp]"');
+  });
+
+  it("uses the `python -m pip` form for the same reasons as PIP_INSTALL_COMMAND", () => {
+    expect(PIP_UPGRADE_COMMAND.startsWith("python -m pip ")).toBe(true);
+  });
+});
+
+describe("upgradeInTerminal", () => {
+  // Mirrors the installInTerminal contract: distinct terminal name,
+  // typed-not-executed, reuses on second call, distinct from install.
+
+  it("creates a terminal named 'Pipeline-Check upgrade'", () => {
+    upgradeInTerminal();
+    const terminals = globalThis.__stubCalls?.terminals ?? [];
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].name).toBe("Pipeline-Check upgrade");
+  });
+
+  it("types the upgrade command without auto-executing", () => {
+    upgradeInTerminal();
+    const t = globalThis.__stubCalls!.terminals[0];
+    expect(t.sent).toHaveLength(1);
+    expect(t.sent[0].text).toBe(PIP_UPGRADE_COMMAND);
+    expect(t.sent[0].addNewLine).toBe(false);
+  });
+
+  it("reuses the existing upgrade terminal across calls", () => {
+    const first = upgradeInTerminal();
+    const second = upgradeInTerminal();
+    expect(second).toBe(first);
+    expect(globalThis.__stubCalls?.terminals).toHaveLength(1);
+  });
+
+  it("does NOT reuse the 'Pipeline-Check install' terminal", () => {
+    // Distinct names so the user can keep an install terminal open
+    // while testing an upgrade in another — and so the terminal
+    // dropdown labels stay accurate.
+    installInTerminal();
+    upgradeInTerminal();
+    const terminals = globalThis.__stubCalls?.terminals ?? [];
+    expect(terminals.map((t) => t.name)).toEqual([
+      "Pipeline-Check install",
+      "Pipeline-Check upgrade",
+    ]);
   });
 });
