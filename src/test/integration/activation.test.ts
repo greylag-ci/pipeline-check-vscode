@@ -35,9 +35,11 @@ suite("Pipeline-Check — activation", () => {
       "pipelineCheck.showLog",
       "pipelineCheck.copyInstallCommand",
       "pipelineCheck.installInTerminal",
+      "pipelineCheck.upgradeInTerminal",
       "pipelineCheck.scanWorkspace",
       "pipelineCheck.findings.refresh",
       "pipelineCheck.findings.changeGrouping",
+      "pipelineCheck.findings.toggleSeverity",
       "pipelineCheck.findings.filter",
       "pipelineCheck.findings.copyRuleId",
       "pipelineCheck.findings.openRuleDocs",
@@ -164,7 +166,14 @@ suite("Pipeline-Check — activation", () => {
     );
   });
 
-  test("viewsWelcome contributes both install-prompt and scan-ready entries", () => {
+  test("viewsWelcome contributes scan-ready, install-prompt, and upgrade-prompt entries", () => {
+    // v1.1.0 added a third welcome entry for the engine-out-of-date
+    // case so the panel can promote the Upgrade action instead of the
+    // generic Install one. The three when clauses must remain mutually
+    // exclusive so VS Code never renders two banners at once; the
+    // unit-suite mirror in src/manifest.test.ts pins the full
+    // expression shape, this integration test just verifies the live
+    // manifest contributes all three.
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert(ext);
     const welcome = ext.packageJSON.contributes?.viewsWelcome as
@@ -176,16 +185,24 @@ suite("Pipeline-Check — activation", () => {
     );
     assert.strictEqual(
       onFindings.length,
-      2,
-      "findings view should have two viewsWelcome entries (ready + not-ready)",
+      3,
+      "findings view should have three viewsWelcome entries (ready + install-prompt + upgrade-prompt)",
     );
     assert.ok(
       onFindings.some((w) => w.when === "pipelineCheck.lspReady"),
       "missing ready-state welcome entry",
     );
     assert.ok(
-      onFindings.some((w) => w.when === "!pipelineCheck.lspReady"),
+      onFindings.some(
+        (w) =>
+          w.when ===
+          "!pipelineCheck.lspReady && !pipelineCheck.engineOutOfDate",
+      ),
       "missing install-prompt welcome entry",
+    );
+    assert.ok(
+      onFindings.some((w) => w.when === "pipelineCheck.engineOutOfDate"),
+      "missing upgrade-prompt welcome entry",
     );
   });
 });

@@ -21,7 +21,17 @@ import * as vscode from "vscode";
 export const PIP_INSTALL_COMMAND =
   'python -m pip install "pipeline-check[lsp]"';
 
+// Mirror of PIP_INSTALL_COMMAND with `--upgrade` so the out-of-date
+// preflight branch can offer "Upgrade in terminal" as its CTA. Same
+// quoting reasoning as above (Windows shell + extras syntax). Kept as
+// a separate constant rather than a runtime "is upgrade?" flag so the
+// UI surfaces that target this command can pin its literal text in a
+// regression test.
+export const PIP_UPGRADE_COMMAND =
+  'python -m pip install --upgrade "pipeline-check[lsp]"';
+
 const TERMINAL_NAME = "Pipeline-Check install";
+const UPGRADE_TERMINAL_NAME = "Pipeline-Check upgrade";
 const CONFIRM_TTL_MS = 2500;
 
 /**
@@ -65,4 +75,27 @@ export async function copyInstallCommandToClipboard(): Promise<void> {
     `Copied: ${PIP_INSTALL_COMMAND}`,
     CONFIRM_TTL_MS,
   );
+}
+
+/**
+ * Same shape as `installInTerminal` but runs the upgrade command. Used
+ * by the preflight's `reason="out_of_date"` branch and the standalone
+ * "Pipeline-Check: Upgrade LSP Server in Terminal" command. The
+ * separate terminal name keeps install and upgrade flows visually
+ * distinct in the terminal dropdown — useful when both happen in the
+ * same session (uninstall + reinstall + upgrade flow during triage).
+ *
+ * Like `installInTerminal`, we type the command but do NOT press
+ * Enter — the user reviews the line (often after activating a venv)
+ * before running it.
+ */
+export function upgradeInTerminal(): vscode.Terminal {
+  const existing = vscode.window.terminals.find(
+    (t) => t.name === UPGRADE_TERMINAL_NAME && t.exitStatus === undefined,
+  );
+  const terminal =
+    existing ?? vscode.window.createTerminal(UPGRADE_TERMINAL_NAME);
+  terminal.show();
+  terminal.sendText(PIP_UPGRADE_COMMAND, false);
+  return terminal;
 }

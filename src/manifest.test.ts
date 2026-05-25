@@ -37,33 +37,55 @@ const manifest = JSON.parse(
 
 const welcome = manifest.contributes.viewsWelcome;
 
-describe("viewsWelcome — conditional install/scan panels", () => {
-  // The findings panel ships two welcome entries — one for the pre-
-  // LSP-ready state (install prompt), one for the ready state (scan
-  // workspace). The user complaint that prompted this rework was a
-  // single dense panel that mixed install instructions with feature
-  // copy. These tests pin the structure so a future edit that
-  // collapses the two states back together fails loudly.
+describe("viewsWelcome — conditional install/scan/upgrade panels", () => {
+  // The findings panel ships THREE welcome entries — one for the
+  // ready state (scan workspace), one for the missing-engine state
+  // (install prompt), and one for the out-of-date engine state
+  // (upgrade prompt). The three `when` clauses MUST be mutually
+  // exclusive so VS Code never renders two banners simultaneously.
+  // These tests pin both the count and the gating expressions so a
+  // future edit can't collapse them.
 
-  it("contributes exactly two entries on the findings view", () => {
+  it("contributes exactly three entries on the findings view", () => {
     const onFindings = welcome.filter(
       (w) => w.view === "pipelineCheck.findings",
     );
-    expect(onFindings).toHaveLength(2);
+    expect(onFindings).toHaveLength(3);
   });
 
-  it("gates one entry behind the LSP-ready context key (positive case)", () => {
+  it("gates the ready entry behind the LSP-ready context key", () => {
     const ready = welcome.find(
       (w) => w.when === LSP_READY_CONTEXT_KEY,
     );
     expect(ready, "ready-state welcome entry missing").toBeDefined();
   });
 
-  it("gates the other entry on the negation (install-prompt case)", () => {
+  it("gates the install-prompt entry on '!lspReady && !engineOutOfDate'", () => {
+    // The compound expression is what keeps install-prompt and
+    // upgrade-prompt mutually exclusive. A regression here would
+    // surface both banners when the engine is too old.
     const notReady = welcome.find(
-      (w) => w.when === `!${LSP_READY_CONTEXT_KEY}`,
+      (w) =>
+        w.when ===
+        `!${LSP_READY_CONTEXT_KEY} && !pipelineCheck.engineOutOfDate`,
     );
     expect(notReady, "install-prompt welcome entry missing").toBeDefined();
+  });
+
+  it("gates the upgrade-prompt entry on the engineOutOfDate key", () => {
+    const upgrade = welcome.find(
+      (w) => w.when === "pipelineCheck.engineOutOfDate",
+    );
+    expect(upgrade, "upgrade-prompt welcome entry missing").toBeDefined();
+  });
+
+  it("upgrade entry promotes 'Upgrade in terminal' as its primary CTA", () => {
+    const upgrade = welcome.find(
+      (w) => w.when === "pipelineCheck.engineOutOfDate",
+    );
+    expect(upgrade?.contents).toMatch(
+      /^\[Upgrade in terminal\]\(command:pipelineCheck\.upgradeInTerminal\)$/m,
+    );
   });
 
   it("ready entry promotes 'Scan workspace' as the primary CTA", () => {
@@ -78,7 +100,9 @@ describe("viewsWelcome — conditional install/scan panels", () => {
 
   it("install-prompt entry exposes 'Install in terminal' as the primary CTA", () => {
     const notReady = welcome.find(
-      (w) => w.when === `!${LSP_READY_CONTEXT_KEY}`,
+      (w) =>
+        w.when ===
+        `!${LSP_READY_CONTEXT_KEY} && !pipelineCheck.engineOutOfDate`,
     );
     expect(notReady?.contents).toMatch(
       /^\[Install in terminal\]\(command:pipelineCheck\.installInTerminal\)$/m,
@@ -87,7 +111,9 @@ describe("viewsWelcome — conditional install/scan panels", () => {
 
   it("install-prompt entry offers 'Retry connection' as a secondary CTA", () => {
     const notReady = welcome.find(
-      (w) => w.when === `!${LSP_READY_CONTEXT_KEY}`,
+      (w) =>
+        w.when ===
+        `!${LSP_READY_CONTEXT_KEY} && !pipelineCheck.engineOutOfDate`,
     );
     expect(notReady?.contents).toMatch(
       /^\[Retry connection\]\(command:pipelineCheck\.restart\)$/m,
@@ -96,7 +122,9 @@ describe("viewsWelcome — conditional install/scan panels", () => {
 
   it("install-prompt entry references pipeline-check[lsp] so users know what to install", () => {
     const notReady = welcome.find(
-      (w) => w.when === `!${LSP_READY_CONTEXT_KEY}`,
+      (w) =>
+        w.when ===
+        `!${LSP_READY_CONTEXT_KEY} && !pipelineCheck.engineOutOfDate`,
     );
     expect(notReady?.contents).toContain("pipeline-check[lsp]");
   });

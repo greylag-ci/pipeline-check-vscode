@@ -14,12 +14,24 @@ import * as vscode from "vscode";
 // by ``source`` so the panel only ever shows our findings.
 const DIAGNOSTIC_SOURCE = "pipeline-check";
 
+// workspaceState key for the per-workspace severity-hide preference.
+// Stored as a string[] of SeverityName values so a future severity
+// addition (or removal) doesn't strand old state — unknown entries
+// are dropped on load.
+const HIDDEN_SEVERITIES_KEY = "pipelineCheck.findings.hiddenSeverities";
+
 // Order matters twice: it picks the bucket ordering in the "by
 // severity" group (most severe first), and it is the fallback if a
 // diagnostic arrives without the pipeline-check ``data.severity``
 // extension (older server, or anything we didn't publish).
-const SEVERITY_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"] as const;
-type SeverityName = (typeof SEVERITY_ORDER)[number];
+export const SEVERITY_ORDER = [
+  "CRITICAL",
+  "HIGH",
+  "MEDIUM",
+  "LOW",
+  "INFO",
+] as const;
+export type SeverityName = (typeof SEVERITY_ORDER)[number];
 
 // Per-bucket icon. CRITICAL renders as ``flame`` (still red-themed)
 // so the severity-grouped tree can distinguish CRITICAL from HIGH at
@@ -121,8 +133,33 @@ export class FindingsTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   // fsPath. Empty string disables filtering. Stored verbatim (with
   // original case) for echo in the InputBox; matched lowercased.
   private filter = "";
+  // Per-workspace set of severities to hide from the panel. Editor-
+  // surface diagnostics (gutter squiggles, Problems panel, CodeLens)
+  // are NOT affected — those still respect `severityThreshold`. The
+  // panel-only filter lets you mute MEDIUM while triaging CRITICAL
+  // without changing settings that propagate to the rest of the
+  // editor. Persisted via workspaceState so the choice survives a
+  // window reload.
+  private hiddenSeverities = new Set<SeverityName>();
+  // Captured at construction so setHiddenSeverities can persist
+  // without taking a workspaceState reference at every call site.
+  private readonly workspaceState: vscode.Memento;
 
   constructor(context: vscode.ExtensionContext) {
+    this.workspaceState = context.workspaceState;
+    // Restore the per-workspace hidden-severity preference. Unknown
+    // entries (e.g. a future severity name we don't recognise) are
+    // dropped silently so the tree never blanks out because of a
+    // mid-version state.
+    const persisted = context.workspaceState.get<string[]>(
+      HIDDEN_SEVERITIES_KEY,
+      [],
+    );
+    for (const name of persisted) {
+      if ((SEVERITY_ORDER as readonly string[]).includes(name)) {
+        this.hiddenSeverities.add(name as SeverityName);
+      }
+    }
     // VS Code does not expose a per-source filter on the diagnostic-
     // change event, so we have to subscribe to all of them and bounce
     // the ones we don't care about. We DO get the list of changed URIs
@@ -175,6 +212,45 @@ export class FindingsTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     this.refresh();
   }
 
+  /**
+   * Currently-hidden severities. Read by the toggle command so the
+   * Quick Pick can pre-select the visible ones with `picked: true`.
+   * Returns a fresh set so a caller cannot mutate our state.
+   */
+  getHiddenSeverities(): Set<SeverityName> {
+    return new Set(this.hiddenSeverities);
+  }
+
+  /**
+   * Replace the hidden-severity set. Persists to workspaceState and
+   * refreshes the tree. The context key
+   * `pipelineCheck.severityFilterActive` lets the manifest paint a
+   * "filter active" affordance on the title-bar button when ANY
+   * severity is currently hidden.
+   *
+   * Persistence failure (an unwritable workspaceState — vanishingly
+   * rare; happens during workspace teardown) is logged via the VS Code
+   * promise chain but does not throw: the in-memory state is already
+   * updated and the user's session reflects the choice; the failure
+   * mode is just "we'll forget the preference next launch", which is
+   * less bad than blowing up the tree refresh.
+   */
+  setHiddenSeverities(hidden: ReadonlySet<SeverityName>): void {
+    // Cheap-out if nothing changed: avoids a refresh storm when a
+    // user re-confirms the current Quick Pick selection.
+    if (sameSeveritySet(this.hiddenSeverities, hidden)) return;
+    this.hiddenSeverities = new Set(hidden);
+    void this.workspaceState.update(HIDDEN_SEVERITIES_KEY, [
+      ...this.hiddenSeverities,
+    ]);
+    void vscode.commands.executeCommand(
+      "setContext",
+      "pipelineCheck.severityFilterActive",
+      this.hiddenSeverities.size > 0,
+    );
+    this.refresh();
+  }
+
   setGroupMode(mode: GroupMode): void {
     if (this.groupMode === mode) {
       return;
@@ -218,9 +294,19 @@ export class FindingsTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   }
 
   private applyFilter(findings: readonly Finding[]): Finding[] {
-    if (!this.filter) return [...findings];
-    const needle = this.filter.toLowerCase();
+    const needle = this.filter ? this.filter.toLowerCase() : "";
+    const hiddenSize = this.hiddenSeverities.size;
+    if (!needle && hiddenSize === 0) return [...findings];
     return findings.filter((f) => {
+      // Severity hide runs first because it's the cheaper test (a set
+      // lookup vs. three case-insensitive substring matches) and
+      // because the user's mental model is "show me only these
+      // severities" — the substring filter narrows further within
+      // that set.
+      if (hiddenSize > 0 && this.hiddenSeverities.has(f.severity)) {
+        return false;
+      }
+      if (!needle) return true;
       if (f.ruleId.toLowerCase().includes(needle)) return true;
       if (f.diagnostic.message.toLowerCase().includes(needle)) return true;
       if (f.uri.fsPath.toLowerCase().includes(needle)) return true;
@@ -571,4 +657,15 @@ function basenameFromUri(uri: vscode.Uri): string {
 
 function workspaceRelative(uri: vscode.Uri): string {
   return vscode.workspace.asRelativePath(uri, false);
+}
+
+function sameSeveritySet(
+  a: ReadonlySet<SeverityName>,
+  b: ReadonlySet<SeverityName>,
+): boolean {
+  if (a.size !== b.size) return false;
+  for (const v of a) {
+    if (!b.has(v)) return false;
+  }
+  return true;
 }

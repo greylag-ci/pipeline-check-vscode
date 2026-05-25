@@ -104,9 +104,15 @@ export function comparePrerelease(a: string, b: string): number {
 /**
  * Build the notification message. Exported for unit testing; the
  * `version` is whatever the manifest reports at activation time.
+ *
+ * Intentionally generic — the toast fires on every minor / patch
+ * bump and a per-release feature list would be stale immediately
+ * after the next bump. The "See release notes" action on the toast
+ * routes the user to the version-specific CHANGELOG entry, which is
+ * always current.
  */
 export function composeMessage(version: string): string {
-  return `Pipeline-Check ${version} is here. The Findings panel, status bar item, inline CodeLens, and Alt+F8 navigation are new — see what changed?`;
+  return `Pipeline-Check ${version} is here. See what changed?`;
 }
 
 /**

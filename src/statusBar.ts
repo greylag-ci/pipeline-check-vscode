@@ -68,26 +68,42 @@ export function formatStatusBarText(c: SeverityCounts): string {
 /**
  * Render the tooltip — a longer breakdown shown on hover. Always
  * lists every nonzero bucket, so the abbreviated bar text never
- * hides information; just makes it less prominent.
+ * hides information; just makes it less prominent. When the LSP
+ * preflight has captured an engine version, a trailing `Engine vX.Y.Z`
+ * line lets users confirm at a glance which pipeline-check install
+ * the extension is talking to — useful when triaging "why isn't this
+ * rule firing?" reports across people on different upstream versions.
  *
  * The trailing hint ("Click… Alt+F8…") doubles as keyboard-shortcut
  * discovery: most users find Alt+F8 here, not by reading the README.
  */
-export function formatStatusBarTooltip(c: SeverityCounts): string {
+export function formatStatusBarTooltip(
+  c: SeverityCounts,
+  engineVersion?: string,
+): string {
   const total = c.CRITICAL + c.HIGH + c.MEDIUM + c.LOW + c.INFO;
-  if (total === 0) {
-    return "Pipeline-Check: no findings";
-  }
-  const lines = [
-    `Pipeline-Check: ${total} finding${total === 1 ? "" : "s"}`,
-  ];
-  for (const sev of ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"] as const) {
-    if (c[sev] > 0) {
-      lines.push(`  ${sev}: ${c[sev]}`);
+  const lines: string[] =
+    total === 0
+      ? ["Pipeline-Check: no findings"]
+      : [`Pipeline-Check: ${total} finding${total === 1 ? "" : "s"}`];
+  if (total > 0) {
+    for (const sev of [
+      "CRITICAL",
+      "HIGH",
+      "MEDIUM",
+      "LOW",
+      "INFO",
+    ] as const) {
+      if (c[sev] > 0) {
+        lines.push(`  ${sev}: ${c[sev]}`);
+      }
     }
+    lines.push("Click to open the Findings panel.");
+    lines.push("Alt+F8 / Shift+Alt+F8 to step through findings.");
   }
-  lines.push("Click to open the Findings panel.");
-  lines.push("Alt+F8 / Shift+Alt+F8 to step through findings.");
+  if (engineVersion) {
+    lines.push(`Engine v${engineVersion}`);
+  }
   return lines.join("\n");
 }
 
@@ -178,6 +194,37 @@ export function pickBackgroundColor(
   return undefined;
 }
 
+// Engine version captured by the LSP preflight, surfaced in the
+// tooltip. Module-level mutable state because the value lives across
+// multiple status-bar renders (any onDidChangeDiagnostics tick) and
+// the producer (extension.ts startClient) and consumer (the update
+// closure below) don't share a direct reference. `rerender` is the
+// status-bar update function, captured at registerStatusBar time so
+// setEngineVersion can push a refresh from outside.
+let engineVersion: string | undefined;
+let rerender: (() => void) | undefined;
+
+/**
+ * Publish a new engine version to the status-bar tooltip. Pass
+ * `undefined` to clear (used on stop / restart so the bar doesn't
+ * pretend an engine is connected after deactivate). The refresh is
+ * synchronous; if the status bar isn't registered yet, the value is
+ * captured and surfaces on the first render.
+ */
+export function setEngineVersion(v: string | undefined): void {
+  engineVersion = v;
+  rerender?.();
+}
+
+/**
+ * Internal accessor — exported only for unit-test isolation between
+ * cases that touch the module-level `engineVersion`. Tests reset
+ * between cases via `setEngineVersion(undefined)`.
+ */
+export function _getEngineVersionForTesting(): string | undefined {
+  return engineVersion;
+}
+
 // File patterns that suggest the current workspace is worth showing
 // the status bar in. Mirrors providers.ts's TRIGGER_PATTERNS — kept
 // inline here so the status bar can ship without a circular import
@@ -226,7 +273,7 @@ export function registerStatusBar(
   const update = () => {
     const counts = countDiagnostics(vscode.languages.getDiagnostics());
     item.text = formatStatusBarText(counts);
-    item.tooltip = formatStatusBarTooltip(counts);
+    item.tooltip = formatStatusBarTooltip(counts, engineVersion);
     item.accessibilityInformation = {
       label: formatStatusBarAccessibilityLabel(counts),
     };
@@ -240,6 +287,10 @@ export function registerStatusBar(
       item.hide();
     }
   };
+  // Wire setEngineVersion to refresh the bar so a preflight that
+  // resolves after the first paint still updates the tooltip without
+  // waiting for the next onDidChangeDiagnostics tick.
+  rerender = update;
 
   /**
    * Re-evaluate workspace relevance by sweeping for any CI file under

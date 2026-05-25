@@ -19,75 +19,34 @@ import {
   State,
   TransportKind,
 } from "vscode-languageclient/node";
+import { PipelineCheckCodeActionProvider } from "./codeActions";
 import { FindingsCodeLensProvider } from "./codeLens";
-import { FindingsTreeProvider, GroupMode } from "./findingsView";
+import { FindingsTreeProvider } from "./findingsView";
 import {
   copyInstallCommandToClipboard,
   installInTerminal,
+  upgradeInTerminal,
 } from "./install";
 import * as clientLog from "./log";
 import { startWithTimeout } from "./lspStart";
-import { setLspReady } from "./lspState";
+import { setEngineOutOfDate, setLspReady } from "./lspState";
 import { transformDiagnostics } from "./middleware";
 import { goToFinding } from "./navigate";
+import {
+  PreflightError,
+  runPreflight,
+  shouldPreflight,
+} from "./preflight";
 import {
   providerForPath,
   TRIGGER_DOCUMENT_SELECTOR,
 } from "./providers";
+import { changeGrouping, toggleSeverity } from "./quickPicks";
 import { createScanOnSaveHandler } from "./scanOnSave";
-import { registerStatusBar } from "./statusBar";
+import { registerStatusBar, setEngineVersion } from "./statusBar";
 import { scanWorkspace } from "./workspaceScan";
 import { showWhatsNewIfUpgraded } from "./whatsNew";
 
-// Group-mode options offered by the Findings panel's "Change
-// Grouping" button. Labels are user-facing; descriptions are the
-// muted secondary text in the Quick Pick row. The order matches the
-// title-bar history of the radio buttons that this Quick Pick
-// replaces, so muscle memory carries over.
-const GROUPING_PICKS: readonly {
-  readonly mode: GroupMode;
-  readonly label: string;
-  readonly description: string;
-}[] = [
-  {
-    mode: "severity",
-    label: "Severity",
-    description: "Critical, High, Medium, Low, Info",
-  },
-  {
-    mode: "file",
-    label: "File",
-    description: "One bucket per file, ordered by path",
-  },
-  {
-    mode: "rule",
-    label: "Rule",
-    description: "One bucket per check ID (GHA-001, etc.)",
-  },
-];
-
-async function changeGrouping(
-  provider: FindingsTreeProvider,
-): Promise<void> {
-  const current = provider.getGroupMode();
-  type Pick = vscode.QuickPickItem & { mode: GroupMode };
-  const items: Pick[] = GROUPING_PICKS.map((p) => ({
-    // ``$(check)`` prefix marks the active mode. The Quick Pick has
-    // no native "selected option" affordance for show-only-callback
-    // pickers, so we draw the check ourselves — same pattern VS Code
-    // uses for its "Change Language Mode" picker.
-    label: p.mode === current ? `$(check) ${p.label}` : `    ${p.label}`,
-    description: p.description,
-    mode: p.mode,
-  }));
-  const choice = await vscode.window.showQuickPick(items, {
-    title: "Group findings by",
-    placeHolder: "Choose how the panel should bucket findings",
-  });
-  if (choice) {
-    provider.setGroupMode(choice.mode);
-  }
-}
 /**
  * Wrapper around `scanWorkspace()` for the two user-fired commands
  * (`Scan workspace` and `Refresh findings`). `scanWorkspace` re-throws
@@ -233,6 +192,78 @@ async function startClient(): Promise<void> {
   // writes to, so [client] and [server] lines interleave with shared
   // timestamps — much easier to read when triaging a bug report.
   clientLog.setLogChannel(outputChannel);
+
+  // Fast-fail preflight: probe `python -c "import pipeline_check"`
+  // before LanguageClient.start() spawns the full LSP. The probe
+  // returns in well under a second for a missing install; without it
+  // the user pays the 30-second start ceiling to learn the same thing.
+  // Gated to the default "python -m pipeline_check.lsp" shape via
+  // shouldPreflight so a custom wrapper script doesn't see a spurious
+  // failure.
+  const config = vscode.workspace.getConfiguration("pipelineCheck");
+  const command = config.get<string>("serverCommand", "python");
+  const args = config.get<string[]>("serverArgs", ["-m", "pipeline_check.lsp"]);
+  if (shouldPreflight(command, args)) {
+    try {
+      clientLog.info("language server: preflight import check");
+      const { version } = await runPreflight(command);
+      clientLog.info(`language server: preflight ok (engine v${version})`);
+      // Publish the captured version to the status-bar tooltip so the
+      // user can confirm at a glance which engine they're talking to —
+      // useful when triaging a "why isn't this rule firing?" report.
+      setEngineVersion(version);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      clientLog.error(`language server: preflight failed — ${message}`);
+      // Branch the failure UX on the reason code:
+      //   - missing / other → "Install in terminal" (fresh install)
+      //   - out_of_date     → "Upgrade in terminal" (run pip --upgrade)
+      // Both paths also offer "Open server log". A null reason (a
+      // non-PreflightError that slipped through) falls through to the
+      // install path, which is the safer of the two.
+      //
+      // The same reason code flips the `engineOutOfDate` context key
+      // so the welcome panel swaps to its upgrade-prompt variant. The
+      // toast and the welcome panel surface the SAME action; users
+      // who dismiss the toast still find the CTA in the panel.
+      const isOutOfDate =
+        err instanceof PreflightError && err.reason === "out_of_date";
+      setEngineOutOfDate(isOutOfDate);
+      const primaryAction = isOutOfDate
+        ? "Upgrade in terminal"
+        : "Install in terminal";
+      // If the probe captured a version before rejecting, surface it
+      // in the status bar even on the out-of-date path — the user is
+      // about to upgrade, but until they do, the bar should reflect
+      // reality (which engine is currently spawning).
+      if (err instanceof PreflightError && err.version) {
+        setEngineVersion(err.version);
+      }
+      void vscode.window
+        .showErrorMessage(
+          `Pipeline-Check: ${message}.`,
+          primaryAction,
+          "Open server log",
+        )
+        .then((choice) => {
+          if (choice === "Install in terminal") {
+            installInTerminal();
+          } else if (choice === "Upgrade in terminal") {
+            upgradeInTerminal();
+          } else if (choice === "Open server log") {
+            outputChannel.show();
+          }
+        });
+      // Same concurrent-restart guard as the catch below: only clear
+      // shared state if our client is still the live one.
+      if (client === local) {
+        client = undefined;
+        setLspReady(false);
+      }
+      return;
+    }
+  }
+
   try {
     clientLog.info("language server: starting");
     await startWithTimeout(local, START_TIMEOUT_MS);
@@ -262,6 +293,11 @@ async function startClient(): Promise<void> {
       if (event.newState === State.Stopped) {
         clientLog.warn("language server: state transitioned to stopped");
         setLspReady(false);
+        // Clear the status-bar engine line on a mid-session crash so
+        // the tooltip stops claiming a server is connected. A normal
+        // restart will re-publish the version via runPreflight on the
+        // next startClient pass.
+        setEngineVersion(undefined);
       } else if (event.newState === State.Running) {
         setLspReady(true);
       }
@@ -319,6 +355,16 @@ async function stopClient(): Promise<void> {
   const local = client;
   client = undefined;
   setLspReady(false);
+  // Clear the cached engine version so the status-bar tooltip doesn't
+  // pretend a server is connected after deactivate / restart. The next
+  // successful startClient will republish a fresh value.
+  setEngineVersion(undefined);
+  // Clear the upgrade-prompt context key. If the user fixed the
+  // engine via the in-toast upgrade flow and clicks Restart, the
+  // welcome panel should fall back to its scan-workspace state on
+  // the next successful start rather than staying pinned to the
+  // upgrade panel.
+  setEngineOutOfDate(false);
   // Drop the state-change listener BEFORE awaiting stop(). Otherwise
   // the Stopped transition that stop() triggers re-fires our handler
   // against the now-detached client and calls setLspReady(false) a
@@ -380,6 +426,19 @@ export async function activate(
       new FindingsCodeLensProvider(context),
     ),
   );
+  // Rule-agnostic CodeActions on every pipeline-check diagnostic.
+  // Open rule docs, Copy rule ID, and Reveal-in-panel — all reachable
+  // from the editor lightbulb without a panel round-trip.
+  context.subscriptions.push(
+    vscode.languages.registerCodeActionsProvider(
+      [...TRIGGER_DOCUMENT_SELECTOR],
+      new PipelineCheckCodeActionProvider(),
+      {
+        providedCodeActionKinds:
+          PipelineCheckCodeActionProvider.providedCodeActionKinds,
+      },
+    ),
+  );
   context.subscriptions.push(
     findingsView,
     // Workspace scan: open every candidate file so the LSP runs its
@@ -399,6 +458,10 @@ export async function activate(
     vscode.commands.registerCommand(
       "pipelineCheck.findings.changeGrouping",
       () => changeGrouping(findingsProvider),
+    ),
+    vscode.commands.registerCommand(
+      "pipelineCheck.findings.toggleSeverity",
+      () => toggleSeverity(findingsProvider),
     ),
     // Context-menu entries on a Findings tree leaf. VS Code passes the
     // TreeNode as the first argument; we read the `finding` shape off
@@ -483,6 +546,10 @@ export async function activate(
     vscode.commands.registerCommand(
       "pipelineCheck.installInTerminal",
       installInTerminal,
+    ),
+    vscode.commands.registerCommand(
+      "pipelineCheck.upgradeInTerminal",
+      upgradeInTerminal,
     ),
     vscode.commands.registerCommand(
       "pipelineCheck.copyInstallCommand",
