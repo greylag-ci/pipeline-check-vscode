@@ -2,7 +2,7 @@
   "name": "pipeline-check",
   "displayName": "Pipeline-Check",
   "description": "Lint CI/CD pipelines for 22 providers against OWASP Top 10 CI/CD Risks and 14 other compliance frameworks. 810+ rules, inline in your editor.",
-  "version": "1.1.0",
+  "version": "1.5.0",
   "publisher": "greylag-ci",
   "license": "MIT",
   "icon": "icon.png",
@@ -333,6 +333,11 @@
           ],
           "default": "off",
           "markdownDescription": "Traces LSP traffic between the editor and the `pipeline_check.lsp` server. Set to `verbose` when debugging."
+        },
+        "pipelineCheck.engineUpdates.checkEnabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Check PyPI once per day for a newer `pipeline-check` engine and surface a non-blocking notification when one is available. The notification's **Upgrade in terminal** action opens a terminal with `python -m pip install --upgrade \"pipeline-check[lsp]\"` typed (but not auto-run, same pattern as the install CTA). **Skip this version** silences the prompt for the offered version only — a later release re-prompts. Set to `false` to disable the check entirely; this is independent of the hard `MIN_ENGINE_VERSION` floor that still drives the **Upgrade in terminal** welcome panel when the installed engine is too old to support the extension."
         }
       }
     }

@@ -11,6 +11,39 @@ versions follow [SemVer](https://semver.org/).
 > section **above** Unreleased, or remove the Unreleased block for the
 > release commit. Otherwise the GitHub release ships boilerplate.
 
+## [1.5.0] — 2026-05-27
+
+Aligns the extension's version stream with the upstream
+[`pipeline-check`](https://pypi.org/project/pipeline-check/) engine's
+1.5.x line so users can read the two side-by-side without doing the
+mapping in their head. No skipped functionality between 1.1.0 and
+1.5.0 — the only user-visible change is the engine-update notifier
+below.
+
+### Added
+
+- **Daily PyPI poll for a newer engine.** Once per 24 h (per-session
+  latch + per-day `globalState` timestamp), the extension queries
+  `https://pypi.org/pypi/pipeline-check/json` after a successful
+  preflight and surfaces a non-blocking notification when PyPI's
+  latest stable is newer than the engine the user has installed.
+  The **Upgrade in terminal** action runs the existing
+  [`upgradeInTerminal`](src/install.ts) flow — terminal opens,
+  `python -m pip install --upgrade "pipeline-check[lsp]"` is typed
+  but **not** auto-executed, same review-then-Enter pattern as the
+  install CTA. **Skip this version** silences the prompt for that
+  exact version only; a later release re-prompts. Dismissing the
+  toast (no choice) re-prompts on the next per-day window. Every
+  failure path (offline, PyPI 5xx, malformed JSON, timeout) is
+  silent — failures land in the Pipeline-Check output channel, not
+  in a user-facing toast for a background nicety they didn't ask
+  about. Independent of the hard `MIN_ENGINE_VERSION` floor in
+  [src/preflight.ts](src/preflight.ts), which still drives the
+  Upgrade welcome panel when the installed engine is too old to
+  support the extension's features. New setting
+  `pipelineCheck.engineUpdates.checkEnabled` (default `true`) turns
+  the check off entirely.
+
 ## [1.1.0] — 2026-05-25
 
 Feature batch on top of v1.0.3. Three user-visible additions plus
