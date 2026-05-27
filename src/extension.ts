@@ -21,6 +21,7 @@ import {
 } from "vscode-languageclient/node";
 import { PipelineCheckCodeActionProvider } from "./codeActions";
 import { FindingsCodeLensProvider } from "./codeLens";
+import { checkForEngineUpdate } from "./engineUpdates";
 import { FindingsTreeProvider } from "./findingsView";
 import {
   copyInstallCommandToClipboard,
@@ -102,6 +103,11 @@ let client: LanguageClient | undefined;
 // crash on the previous client would still fire into our handler and
 // flip `lspReady` against the live client.
 let clientStateChangeDisposable: vscode.Disposable | undefined;
+// Captured at activate() so startClient (and any restart triggered
+// later) can reach globalState for the engine-update check without
+// the activate→startClient call having to plumb it through every
+// internal hop. Cleared on deactivate.
+let extensionContext: vscode.ExtensionContext | undefined;
 // Hard ceiling on how long `client.start()` is allowed to run before
 // we treat the LSP as broken. Without this, a `serverArgs: []`
 // (configured Python interpreter drops into the REPL waiting on
@@ -212,6 +218,13 @@ async function startClient(): Promise<void> {
       // user can confirm at a glance which engine they're talking to —
       // useful when triaging a "why isn't this rule firing?" report.
       setEngineVersion(version);
+      // Fire-and-forget the daily PyPI poll for a newer engine
+      // version. Every failure path inside `checkForEngineUpdate` is
+      // silent (logged, no toast); the function self-throttles via
+      // globalState so this call is safe on every startClient pass.
+      if (extensionContext) {
+        void checkForEngineUpdate(extensionContext, version);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       clientLog.error(`language server: preflight failed — ${message}`);
@@ -394,6 +407,10 @@ async function stopClient(): Promise<void> {
 export async function activate(
   context: vscode.ExtensionContext,
 ): Promise<void> {
+  // Stash the context so startClient (and any subsequent restart)
+  // can reach globalState for the daily engine-update check. Cleared
+  // in deactivate to avoid leaking a reference across host restarts.
+  extensionContext = context;
   // The Findings tree reads from already-published diagnostics, so we
   // wire it up before starting the client. That way, if the server
   // takes a moment to come up (or fails outright), the panel is still
@@ -636,4 +653,5 @@ export async function activate(
 
 export async function deactivate(): Promise<void> {
   await stopClient();
+  extensionContext = undefined;
 }
