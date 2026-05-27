@@ -11,6 +11,25 @@ versions follow [SemVer](https://semver.org/).
 > section **above** Unreleased, or remove the Unreleased block for the
 > release commit. Otherwise the GitHub release ships boilerplate.
 
+## [1.5.1] — 2026-05-27
+
+Recovery republish of v1.5.0 — the VS Code Marketplace publish step
+timed out on `_apis/gallery` (Azure DevOps gallery API,
+Microsoft-side) and `vsce publish` returned non-zero before the
+upload was committed. Open VSX and the GitHub release for v1.5.0
+both shipped fine on the original tag push; only Marketplace
+missed it, leaving Marketplace users stuck on 1.1.0 while OVSX
+users got 1.5.0. This tag exists solely to re-fire the publish
+pipeline so Marketplace catches up. No source changes between
+v1.5.0 and v1.5.1.
+
+### Changed
+
+- **Version bump only — no functional changes.** v1.5.0 is the
+  identical extension code; Open VSX users will see a 1.5.0 → 1.5.1
+  update with no behavioural diff. VS Code Marketplace users skip
+  1.5.0 entirely (it was never published there).
+
 ## [1.5.0] — 2026-05-27
 
 Aligns the extension's version stream with the upstream
