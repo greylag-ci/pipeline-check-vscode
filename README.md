@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CodeRabbit](https://img.shields.io/coderabbit/prs/github/greylag-ci/pipeline-check-vscode?labelColor=171717&color=FF570A&label=CodeRabbit+Reviews)](https://coderabbit.ai)
 
-Lint CI/CD pipelines for 22 providers against OWASP Top 10 CI/CD Risks and 14 other compliance frameworks. 810+ rules, inline in your editor: severity-graded gutter squiggles, hover descriptions with `--explain` prose, and recommended-action hints. Built on the same rule registry as the [pipeline-check](https://github.com/dmartinochoa/pipeline-check) CLI, so editor findings match `pipeline_check --output json` byte-for-byte (modulo position translation).
+Lint CI/CD pipelines for 34 providers against OWASP Top 10 CI/CD Risks and 17 other compliance frameworks. 1160+ rules, inline in your editor: severity-graded gutter squiggles, hover descriptions with `--explain` prose, and recommended-action hints. Built on the same rule registry as the [pipeline-check](https://github.com/dmartinochoa/pipeline-check) CLI, so editor findings match `pipeline_check --output json` byte-for-byte (modulo position translation).
 
 ![Editor window with the Findings panel grouped by severity, gutter squiggles on the open workflow file, the activity-bar badge showing six findings, and a diagnostic hover tooltip](docs/screenshots/01-inline-findings.png)
 
