@@ -11,6 +11,18 @@ versions follow [SemVer](https://semver.org/).
 > section **above** Unreleased, or remove the Unreleased block for the
 > release commit. Otherwise the GitHub release ships boilerplate.
 
+## [Unreleased]
+
+### Changed
+
+- Refreshed the engine-capability claims in the README, marketplace
+  description, and walkthrough panels to match the pipeline-check 1.12.0
+  release: **34 providers** (was 22), **17 other compliance frameworks**
+  beyond OWASP Top 10 CI/CD (was 14), and **1160+ rules** (was 810+). No
+  code change; `MIN_ENGINE_VERSION` stays at the 1.x floor since the
+  extension still only reads the stable `Diagnostic.code.target` /
+  `data.severity` fields.
+
 ## [1.5.1] — 2026-05-27
 
 Recovery republish of v1.5.0 — the VS Code Marketplace publish step
