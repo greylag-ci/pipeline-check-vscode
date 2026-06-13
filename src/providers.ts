@@ -47,15 +47,34 @@ export type ProviderId =
  */
 export const PROVIDERS: Readonly<Record<ProviderId, readonly string[]>> = {
   "github-actions": ["**/.github/workflows/*.{yml,yaml}"],
-  gitlab: ["**/.gitlab-ci.yml"],
-  azure: ["**/azure-pipelines.yml"],
-  bitbucket: ["**/bitbucket-pipelines.yml"],
-  circleci: ["**/.circleci/config.yml"],
-  "cloud-build": ["**/cloudbuild.yaml"],
-  buildkite: ["**/.buildkite/pipeline.yml"],
+  // For every YAML-extension provider the upstream LSP's
+  // pipeline_check/lsp/detection.py accepts both .yml AND .yaml
+  // (gitlab / azure / bitbucket / circleci / cloud-build /
+  // buildkite / drone). The extension's patterns mirror that
+  // tolerance — otherwise files the LSP would happily scan never
+  // route through documentSelector and `workspaceContains:` doesn't
+  // wake the extension up. A v1.5.x audit found these were stricter
+  // than the LSP without intent.
+  gitlab: ["**/.gitlab-ci.{yml,yaml}"],
+  azure: ["**/azure-pipelines.{yml,yaml}"],
+  bitbucket: ["**/bitbucket-pipelines.{yml,yaml}"],
+  circleci: ["**/.circleci/config.{yml,yaml}"],
+  "cloud-build": ["**/cloudbuild.{yml,yaml}"],
+  buildkite: ["**/.buildkite/pipeline.{yml,yaml}"],
   drone: ["**/.drone.{yml,yaml}"],
   jenkins: ["**/Jenkinsfile"],
-  dockerfile: ["**/Dockerfile", "**/Containerfile"],
+  // Dockerfile shapes mirror the upstream LSP's tolerance:
+  // bare ``Dockerfile`` / ``Containerfile``, ``Dockerfile.<suffix>``
+  // (e.g. ``Dockerfile.alpine``, ``Dockerfile.dev``), and
+  // ``*.Dockerfile`` (e.g. ``myapp.Dockerfile``). All four shapes
+  // resolve through the same provider-loader convention upstream,
+  // so the extension classifies them the same way.
+  dockerfile: [
+    "**/Dockerfile",
+    "**/Containerfile",
+    "**/Dockerfile.*",
+    "**/*.Dockerfile",
+  ],
 };
 
 export const PROVIDER_IDS = Object.keys(PROVIDERS) as readonly ProviderId[];
@@ -122,7 +141,15 @@ function globMatch(pattern: string, path: string): boolean {
   return false;
 }
 
-function expandBraces(pattern: string): string[] {
+/**
+ * Expand `{a,b,c}` alternatives in a glob into the cartesian product
+ * of plain globs. Exported so the manifest drift fence in
+ * `manifest.test.ts` can compute the expanded form of
+ * `TRIGGER_PATTERNS` and assert it lines up with the explicit
+ * `activationEvents` enumeration (which VS Code's `workspaceContains:`
+ * grammar does not brace-expand on its own).
+ */
+export function expandBraces(pattern: string): string[] {
   const match = /^(.*)\{([^{}]+)\}(.*)$/.exec(pattern);
   if (!match) return [pattern];
   const [, head, body, tail] = match;

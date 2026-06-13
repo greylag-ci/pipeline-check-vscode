@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 vi.mock("vscode", () => ({}));
 
 import { LSP_READY_CONTEXT_KEY } from "./lspState";
-import { PROVIDER_IDS } from "./providers";
+import { expandBraces, PROVIDER_IDS, TRIGGER_PATTERNS } from "./providers";
 
 interface ManifestViewsWelcome {
   readonly view: string;
@@ -342,4 +342,135 @@ describe("keywords — marketplace search relevance matches scanned providers", 
       expect(manifest.keywords).toContain(k);
     }
   });
+});
+
+// ─── activationEvents in lockstep with TRIGGER_PATTERNS ─────────────
+
+describe("activationEvents — exact expansion of TRIGGER_PATTERNS", () => {
+  // Two surfaces describe the same set of files the extension cares
+  // about:
+  //
+  //   1. `TRIGGER_PATTERNS` in src/providers.ts — drives the LSP
+  //      `documentSelector`, the workspace-scan command, and the
+  //      middleware filter via `providerForPath`.
+  //   2. `activationEvents` in package.json — VS Code's gate for
+  //      waking the extension up when a matching file is present.
+  //
+  // VS Code's `workspaceContains:` grammar does NOT support brace
+  // expansion: `workspaceContains:**/foo.{yml,yaml}` is a literal
+  // string match and won't fire on either extension. So
+  // `activationEvents` must explicitly enumerate every expanded
+  // form of `TRIGGER_PATTERNS` (brace-expanded), each prefixed with
+  // `workspaceContains:`.
+  //
+  // A drift here is silent: the extension simply doesn't wake up
+  // when the user opens a `.gitlab-ci.yaml` file, the file never
+  // reaches the LSP, and the user sees no findings. This test
+  // closes that gap by failing CI on any divergence.
+
+  const workspaceContainsEvents = manifest.activationEvents
+    .filter((e) => e.startsWith("workspaceContains:"))
+    .map((e) => e.slice("workspaceContains:".length));
+
+  const expectedActivationPatterns = [...TRIGGER_PATTERNS].flatMap(
+    expandBraces,
+  );
+
+  it("activationEvents enumerates exactly the brace-expanded TRIGGER_PATTERNS", () => {
+    // Sorted symmetric-difference comparison so a missing OR an
+    // extra activationEvent both surface readably.
+    expect([...workspaceContainsEvents].sort()).toEqual(
+      [...expectedActivationPatterns].sort(),
+    );
+  });
+
+  it("no activationEvent carries unexpanded braces (VS Code treats them as literal)", () => {
+    // Defence against a future paste-back where someone copies a
+    // brace-form pattern in. VS Code would match the literal text
+    // and silently never activate.
+    for (const event of workspaceContainsEvents) {
+      expect(
+        event,
+        `activationEvent '${event}' carries unexpanded braces — VS Code does not brace-expand workspaceContains:`,
+      ).not.toMatch(/\{[^{}]+\}/);
+    }
+  });
+});
+
+// ─── enumDescriptions length parity ─────────────────────────────────
+
+describe("enumDescriptions — every settings enum has same-length descriptions", () => {
+  // VS Code's Settings UI renders the description for `enum[i]` from
+  // `enumDescriptions[i]`. A length mismatch silently drops the tail —
+  // either the user sees a raw provider ID with no explanation, or
+  // (worse) sees the description for the WRONG enum value because the
+  // array indexes shifted. Pin both arrays the same length per
+  // setting.
+
+  const PROPERTIES = manifest.contributes.configuration.properties;
+
+  type EnumProperty = {
+    readonly key: string;
+    readonly enum: readonly string[];
+    readonly enumDescriptions: readonly string[] | undefined;
+  };
+
+  function collectEnumProperties(): EnumProperty[] {
+    const out: EnumProperty[] = [];
+    for (const [key, prop] of Object.entries(PROPERTIES)) {
+      // Schema reaches `enum` either directly (string setting) or
+      // under `items` (array-of-string setting). Both shapes need
+      // length-parity with their sibling `enumDescriptions`.
+      // `enumDescriptions` is a VS Code extension to JSON Schema not
+      // captured by the local Manifest interface; widen via `unknown`
+      // to read it without expanding the interface.
+      const raw = prop as unknown as Record<string, unknown>;
+      const direct = raw.enum;
+      const directDescs = raw.enumDescriptions;
+      if (Array.isArray(direct)) {
+        out.push({
+          key,
+          enum: direct as string[],
+          enumDescriptions: Array.isArray(directDescs)
+            ? (directDescs as string[])
+            : undefined,
+        });
+      }
+      const items = raw.items as Record<string, unknown> | undefined;
+      if (items && Array.isArray(items.enum)) {
+        out.push({
+          key: `${key}.items`,
+          enum: items.enum as string[],
+          enumDescriptions: Array.isArray(items.enumDescriptions)
+            ? (items.enumDescriptions as string[])
+            : undefined,
+        });
+      }
+    }
+    return out;
+  }
+
+  const enumProperties = collectEnumProperties();
+
+  it("collects at least one enum-bearing setting (sanity check on the walker)", () => {
+    // A future schema rewrite that hides enums behind `oneOf` /
+    // `anyOf` would silently return zero from the walker and the
+    // length-parity check would pass vacuously. Pin the floor.
+    expect(enumProperties.length).toBeGreaterThanOrEqual(3);
+  });
+
+  for (const { key, enum: values, enumDescriptions } of enumProperties) {
+    it(`${key}: enumDescriptions length matches enum length (or is absent)`, () => {
+      if (enumDescriptions === undefined) {
+        // Absent enumDescriptions is allowed — the UI falls back to
+        // the raw enum value. The failure mode this test guards
+        // against is a LENGTH MISMATCH, not a missing array.
+        return;
+      }
+      expect(
+        enumDescriptions.length,
+        `${key}: enum has ${values.length} entries but enumDescriptions has ${enumDescriptions.length}`,
+      ).toBe(values.length);
+    });
+  }
 });
