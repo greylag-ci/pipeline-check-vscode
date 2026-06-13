@@ -45,15 +45,23 @@
     "workspaceContains:**/.github/workflows/*.yml",
     "workspaceContains:**/.github/workflows/*.yaml",
     "workspaceContains:**/.gitlab-ci.yml",
+    "workspaceContains:**/.gitlab-ci.yaml",
     "workspaceContains:**/azure-pipelines.yml",
+    "workspaceContains:**/azure-pipelines.yaml",
     "workspaceContains:**/bitbucket-pipelines.yml",
+    "workspaceContains:**/bitbucket-pipelines.yaml",
     "workspaceContains:**/.circleci/config.yml",
+    "workspaceContains:**/.circleci/config.yaml",
+    "workspaceContains:**/cloudbuild.yml",
     "workspaceContains:**/cloudbuild.yaml",
     "workspaceContains:**/.buildkite/pipeline.yml",
+    "workspaceContains:**/.buildkite/pipeline.yaml",
     "workspaceContains:**/.drone.yml",
     "workspaceContains:**/.drone.yaml",
     "workspaceContains:**/Jenkinsfile",
     "workspaceContains:**/Dockerfile",
+    "workspaceContains:**/Dockerfile.*",
+    "workspaceContains:**/*.Dockerfile",
     "workspaceContains:**/Containerfile"
   ],
   "capabilities": {
@@ -298,6 +306,18 @@
               "drone",
               "jenkins",
               "dockerfile"
+            ],
+            "enumDescriptions": [
+              "GitHub Actions — .github/workflows/*.yml / *.yaml",
+              "GitLab CI — .gitlab-ci.yml / .gitlab-ci.yaml",
+              "Azure Pipelines — azure-pipelines.yml / azure-pipelines.yaml",
+              "Bitbucket Pipelines — bitbucket-pipelines.yml / bitbucket-pipelines.yaml",
+              "CircleCI — .circleci/config.yml / config.yaml",
+              "Google Cloud Build — cloudbuild.yml / cloudbuild.yaml",
+              "Buildkite — .buildkite/pipeline.yml / pipeline.yaml",
+              "Drone CI — .drone.yml / .drone.yaml",
+              "Jenkins — Jenkinsfile (Declarative and Scripted)",
+              "Dockerfile — Dockerfile, Containerfile, Dockerfile.<suffix>, *.Dockerfile"
             ]
           },
           "uniqueItems": true,
@@ -322,6 +342,12 @@
             "high",
             "critical"
           ],
+          "enumDescriptions": [
+            "Show every finding (default — mirrors the CLI). INFO + LOW + MEDIUM + HIGH + CRITICAL.",
+            "Hide LOW and INFO. Keep MEDIUM, HIGH, and CRITICAL.",
+            "Show HIGH and CRITICAL only. Drops MEDIUM and below.",
+            "Show CRITICAL only — the quietest editor surface."
+          ],
           "default": "low",
           "markdownDescription": "Lowest severity that produces a diagnostic. Findings below this level are dropped on the client side so the gutter / Problems panel only carries the cuts you care about. Mirrors the CLI's `--severity-threshold`. Default `low` matches CLI behavior; set to `high` or `critical` for a quieter editor."
         },
@@ -331,6 +357,11 @@
             "off",
             "messages",
             "verbose"
+          ],
+          "enumDescriptions": [
+            "No LSP tracing (default).",
+            "Log LSP method names only.",
+            "Log full LSP payloads — use only for debugging; the trace channel can get noisy."
           ],
           "default": "off",
           "markdownDescription": "Traces LSP traffic between the editor and the `pipeline_check.lsp` server. Set to `verbose` when debugging."
