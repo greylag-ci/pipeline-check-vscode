@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 vi.mock("vscode", () => ({}));
 
 import { LSP_READY_CONTEXT_KEY } from "./lspState";
+import { PROVIDER_IDS } from "./providers";
 
 interface ManifestViewsWelcome {
   readonly view: string;
@@ -19,12 +20,23 @@ interface ManifestCommand {
   readonly category?: string;
 }
 
+interface ManifestConfigurationProperty {
+  readonly type: string | string[];
+  readonly items?: { readonly type: string; readonly enum?: string[] };
+  readonly enum?: string[];
+  readonly default?: unknown;
+}
+
 interface Manifest {
   readonly contributes: {
     readonly viewsWelcome: ManifestViewsWelcome[];
     readonly commands: ManifestCommand[];
+    readonly configuration: {
+      readonly properties: Record<string, ManifestConfigurationProperty>;
+    };
   };
   readonly activationEvents: string[];
+  readonly keywords: string[];
   readonly capabilities?: {
     readonly untrustedWorkspaces?: { readonly supported: string };
     readonly virtualWorkspaces?: boolean;
@@ -203,5 +215,131 @@ describe("capabilities — locked-down workspace trust", () => {
 
   it("declares virtualWorkspaces = false", () => {
     expect(manifest.capabilities?.virtualWorkspaces).toBe(false);
+  });
+});
+
+// ─── disabledProviders enum sync ────────────────────────────────────
+
+// The set of providers the upstream LSP's `supported_providers()`
+// dispatch table emits diagnostics for, mapped onto the extension's
+// internal provider IDs. Pinned here so a future widening upstream
+// (a new single-file provider like `harness` or `devenv` joining
+// `pipeline_check/lsp/scan.py`) forces an explicit local update of
+// PROVIDER_IDS + the manifest enum + this list — rather than silently
+// drifting and leaving users with diagnostics they can't disable.
+//
+// Name mapping: `github` → `github-actions`, `cloudbuild` → `cloud-build`;
+// everything else is the identity.
+const LSP_SUPPORTED_PROVIDER_IDS = [
+  "github-actions",
+  "gitlab",
+  "azure",
+  "bitbucket",
+  "circleci",
+  "cloud-build",
+  "buildkite",
+  "drone",
+  "jenkins",
+  "dockerfile",
+] as const;
+
+describe("disabledProviders — enum in lockstep with PROVIDER_IDS and the LSP", () => {
+  // Three surfaces must agree on the same provider-id list:
+  //
+  //   1. The manifest's `pipelineCheck.disabledProviders` enum
+  //      (user-visible Settings UI dropdown).
+  //   2. `PROVIDER_IDS` from src/providers.ts (drives the
+  //      middleware filter `providerForPath`).
+  //   3. The upstream LSP's `supported_providers()` set in
+  //      pipeline_check/lsp/scan.py (what the engine actually scans).
+  //
+  // A drift between #1 and #2 means the Settings UI lets the user
+  // pick a provider the middleware doesn't recognise (the filter is
+  // a no-op for unknown IDs, so the user's intent is silently
+  // dropped). A drift between #2 and #3 means we're either filtering
+  // for a provider the LSP never publishes, or we have no path to
+  // silence diagnostics from a provider the LSP DOES publish. Both
+  // failure modes are silent without these fences.
+
+  const disabledProvidersSchema =
+    manifest.contributes.configuration.properties[
+      "pipelineCheck.disabledProviders"
+    ];
+  const manifestEnum = disabledProvidersSchema?.items?.enum ?? [];
+
+  it("declares the disabledProviders setting as an array with an enum", () => {
+    // Pin the shape so a future edit that drops the enum (turning
+    // the setting into a free-form string list) trips this test
+    // and forces a deliberate decision.
+    expect(disabledProvidersSchema?.type).toBe("array");
+    expect(disabledProvidersSchema?.items?.type).toBe("string");
+    expect(manifestEnum.length).toBeGreaterThan(0);
+  });
+
+  it("manifest enum matches PROVIDER_IDS exactly (no drift in either direction)", () => {
+    // toSorted'd comparison so the test fails with a readable
+    // symmetric-difference even if the orderings drifted.
+    expect([...manifestEnum].sort()).toEqual([...PROVIDER_IDS].sort());
+  });
+
+  it("PROVIDER_IDS matches the upstream LSP's supported set (drift fence)", () => {
+    // When upstream pipeline_check widens `supported_providers()` —
+    // e.g. adding `harness` or `devenv` — update
+    // LSP_SUPPORTED_PROVIDER_IDS above (and PROVIDER_IDS + the
+    // manifest enum) in the same commit. This test fires LOUDLY so
+    // the change can't slip in silently and leave users unable to
+    // disable diagnostics for the new provider.
+    expect([...PROVIDER_IDS].sort()).toEqual(
+      [...LSP_SUPPORTED_PROVIDER_IDS].sort(),
+    );
+  });
+
+  it("default is an empty array (no provider silenced out of the box)", () => {
+    // A non-empty default would surprise users — installing the
+    // extension shouldn't silence anything.
+    expect(disabledProvidersSchema?.default).toEqual([]);
+  });
+});
+
+// ─── keywords reflect what the LSP actually scans ───────────────────
+
+describe("keywords — marketplace search relevance matches scanned providers", () => {
+  // Marketplace search ranks by keyword relevance. Listing providers
+  // we don't actually scan in-editor (e.g. `terraform`, `kubernetes`,
+  // `helm`, `cloudformation` — the multi-file context-heavy providers
+  // explicitly deferred per the README) misleads users searching for
+  // those terms: they install the extension, open a Terraform file,
+  // see no findings, and bounce. Keep the keyword list aligned with
+  // PROVIDER_IDS (loosely — keyword spelling can differ from the
+  // internal ID, e.g. `github-actions` vs `github`).
+
+  it("does not include providers the LSP doesn't scan", () => {
+    // The set the LSP intentionally doesn't dispatch to (per
+    // pipeline_check/lsp/scan.py's leading comment): multi-file
+    // / context-heavy providers. If we ever start scanning these
+    // in-editor, drop them from this list AND add them to the
+    // disabledProviders enum + PROVIDER_IDS in the same commit.
+    const NOT_SCANNED_IN_EDITOR = [
+      "terraform",
+      "cloudformation",
+      "kubernetes",
+      "helm",
+      "aws",
+    ];
+    for (const k of NOT_SCANNED_IN_EDITOR) {
+      expect(
+        manifest.keywords,
+        `keyword '${k}' is for a provider the LSP doesn't scan — marketplace searchers will install and see no findings`,
+      ).not.toContain(k);
+    }
+  });
+
+  it("includes the broad CI/CD discovery terms", () => {
+    // `ci` / `cd` / `security` / `pipeline` are the high-value
+    // generic searches. Pin them so a marketplace-polish pass
+    // doesn't accidentally strip the discoverability terms.
+    for (const k of ["ci", "cd", "security", "pipeline"]) {
+      expect(manifest.keywords).toContain(k);
+    }
   });
 });

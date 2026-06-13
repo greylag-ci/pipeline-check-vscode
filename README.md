@@ -50,6 +50,8 @@ Pilot provider coverage (single-file workflow providers plus Dockerfile):
 
 Multi-file and context-heavy providers (Kubernetes, Helm, Terraform plans, live AWS, CloudFormation, SCM posture) ship in a later release; the CLI already covers them.
 
+For a deeper reference — install recipes for non-VS Code editors (Cursor, Windsurf, VSCodium, Neovim, Helix), the CLI-vs-extension feature matrix, and a troubleshooting block — see the upstream [VS Code extension docs page](https://dmartinochoa.github.io/pipeline-check/integrations/vscode/).
+
 ## Install
 
 Pipeline-Check ships as **two pieces** that talk to each other over stdio:

@@ -24,10 +24,11 @@
     "pipeline",
     "github-actions",
     "gitlab-ci",
-    "terraform",
-    "cloudformation",
-    "kubernetes",
-    "helm",
+    "azure-pipelines",
+    "bitbucket-pipelines",
+    "circleci",
+    "jenkins",
+    "drone",
     "dockerfile"
   ],
   "repository": {
