@@ -1,6 +1,4 @@
 import { describe, it, expect, vi } from "vitest";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 
 vi.mock("vscode", () => ({}));
 
@@ -10,7 +8,13 @@ import {
   TRIGGER_PATTERNS,
   TRIGGER_DOCUMENT_SELECTOR,
   providerForPath,
+  expandBraces,
 } from "./providers";
+
+// The TRIGGER_PATTERNS ↔ activationEvents drift fence lives in
+// src/manifest.test.ts (it groups with the other manifest-shape
+// invariants there, including the "no unexpanded braces in
+// activationEvents" leg). Don't duplicate it here.
 
 describe("TRIGGER_PATTERNS", () => {
   it("derives a `file`-scoped DocumentFilter for each pattern", () => {
@@ -20,44 +24,47 @@ describe("TRIGGER_PATTERNS", () => {
       expect(typeof f.pattern).toBe("string");
     }
   });
-
-  it("stays in sync with package.json#activationEvents", () => {
-    // The manifest cannot import this module (VS Code reads it before
-    // any code runs), so the activationEvents list duplicates these
-    // patterns. The test below catches the drift before it ships:
-    // every TRIGGER_PATTERNS entry must be reachable from at least
-    // one `workspaceContains:` event, and every `workspaceContains:`
-    // event must correspond to a pattern.
-    const pkg = JSON.parse(
-      readFileSync(resolve(__dirname, "..", "package.json"), "utf8"),
-    ) as { activationEvents: string[] };
-
-    const wsContains = pkg.activationEvents
-      .filter((e) => e.startsWith("workspaceContains:"))
-      .map((e) => e.slice("workspaceContains:".length));
-
-    // Brace-globs collapse to one DocumentFilter pattern but expand
-    // into multiple activationEvents (one per branch). Expand the
-    // TRIGGER_PATTERNS list the same way so the comparison is apples
-    // to apples.
-    const expanded = TRIGGER_PATTERNS.flatMap(expandBraces).sort();
-    const events = [...wsContains].sort();
-    expect(events).toEqual(expanded);
-  });
 });
 
-/**
- * Expand a single-brace pattern like `**\/foo.{yml,yaml}` into
- * `["**\/foo.yml", "**\/foo.yaml"]`. Doesn't handle nested braces —
- * good enough for our patterns and trivial to extend if a future
- * pattern needs it.
- */
-function expandBraces(pattern: string): string[] {
-  const match = /^(.*)\{([^{}]+)\}(.*)$/.exec(pattern);
-  if (!match) return [pattern];
-  const [, head, body, tail] = match;
-  return body.split(",").map((alt) => `${head}${alt}${tail}`);
-}
+describe("expandBraces", () => {
+  // Tiny pure helper but it's the seam the manifest drift fence and
+  // the glob matcher both rely on. Pin the shapes our patterns
+  // actually use plus a couple of edge cases — a regression here
+  // would propagate to both the runtime documentSelector and the
+  // CI fence at the same time.
+
+  it("returns the input unchanged when there are no braces", () => {
+    expect(expandBraces("**/Dockerfile")).toEqual(["**/Dockerfile"]);
+    expect(expandBraces("**/Jenkinsfile")).toEqual(["**/Jenkinsfile"]);
+  });
+
+  it("expands a single brace group into its alternatives", () => {
+    expect(expandBraces("**/.drone.{yml,yaml}")).toEqual([
+      "**/.drone.yml",
+      "**/.drone.yaml",
+    ]);
+  });
+
+  it("expands every brace group on the path (cartesian product)", () => {
+    // None of our patterns currently use more than one brace, but
+    // the helper recurses so multi-brace input should still work.
+    // A future pattern (e.g. `**/.{a,b}.{c,d}`) inherits this.
+    expect(expandBraces("**/.{a,b}.{c,d}").sort()).toEqual([
+      "**/.a.c",
+      "**/.a.d",
+      "**/.b.c",
+      "**/.b.d",
+    ]);
+  });
+
+  it("handles three-alternative groups", () => {
+    expect(expandBraces("**/x.{a,b,c}").sort()).toEqual([
+      "**/x.a",
+      "**/x.b",
+      "**/x.c",
+    ]);
+  });
+});
 
 describe("PROVIDERS map", () => {
   it("covers every entry in PROVIDER_IDS", () => {
@@ -83,7 +90,7 @@ describe("providerForPath", () => {
     );
   });
 
-  it("maps the single-file providers", () => {
+  it("maps the single-file providers (canonical .yml form)", () => {
     expect(providerForPath("/repo/.gitlab-ci.yml")).toBe("gitlab");
     expect(providerForPath("/repo/azure-pipelines.yml")).toBe("azure");
     expect(providerForPath("/repo/bitbucket-pipelines.yml")).toBe("bitbucket");
@@ -95,10 +102,47 @@ describe("providerForPath", () => {
     expect(providerForPath("/repo/Jenkinsfile")).toBe("jenkins");
   });
 
+  it("accepts the .yaml variant for every YAML-extension provider (LSP parity)", () => {
+    // The upstream LSP's pipeline_check/lsp/detection.py accepts
+    // both .yml AND .yaml for these six providers, and our patterns
+    // were widened to match (chore: widen file-pattern tolerance).
+    // Pin every newly-accepted shape so a future narrowing has to
+    // remove these assertions deliberately rather than silently
+    // dropping editor coverage on the .yaml variants.
+    expect(providerForPath("/repo/.gitlab-ci.yaml")).toBe("gitlab");
+    expect(providerForPath("/repo/azure-pipelines.yaml")).toBe("azure");
+    expect(providerForPath("/repo/bitbucket-pipelines.yaml")).toBe("bitbucket");
+    expect(providerForPath("/repo/.circleci/config.yaml")).toBe("circleci");
+    // cloudbuild flips the canonical form: the trigger-table example
+    // shows cloudbuild.yaml, but the LSP also accepts cloudbuild.yml.
+    expect(providerForPath("/repo/cloudbuild.yml")).toBe("cloud-build");
+    expect(providerForPath("/repo/.buildkite/pipeline.yaml")).toBe("buildkite");
+  });
+
   it("groups Dockerfile and Containerfile under the same id", () => {
     expect(providerForPath("/repo/Dockerfile")).toBe("dockerfile");
     expect(providerForPath("/repo/Containerfile")).toBe("dockerfile");
     expect(providerForPath("/repo/build/Dockerfile")).toBe("dockerfile");
+  });
+
+  it("accepts the suffixed Dockerfile shapes (LSP parity)", () => {
+    // The upstream LSP's pipeline_check/lsp/detection.py accepts
+    // `Dockerfile.<suffix>` (Dockerfile.alpine, Dockerfile.dev) and
+    // `*.Dockerfile` (myapp.Dockerfile) alongside the bare form.
+    // Common in monorepos that ship per-target Dockerfiles. Each
+    // assertion pins a real-world shape that previously slipped
+    // through providerForPath as undefined and got silently dropped
+    // by the disabledProviders middleware filter.
+    expect(providerForPath("/repo/Dockerfile.alpine")).toBe("dockerfile");
+    expect(providerForPath("/repo/Dockerfile.dev")).toBe("dockerfile");
+    expect(providerForPath("/repo/Dockerfile.prod")).toBe("dockerfile");
+    expect(providerForPath("/repo/myapp.Dockerfile")).toBe("dockerfile");
+    expect(providerForPath("/repo/services/api.Dockerfile")).toBe("dockerfile");
+    // Lowercase variants land under the same id (Linux users with
+    // lowercase build files; same case-insensitive matcher as the
+    // bare Dockerfile path).
+    expect(providerForPath("/repo/dockerfile.alpine")).toBe("dockerfile");
+    expect(providerForPath("/repo/myapp.dockerfile")).toBe("dockerfile");
   });
 
   it("normalises Windows backslashes before matching", () => {
