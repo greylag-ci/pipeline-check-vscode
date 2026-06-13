@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CodeRabbit](https://img.shields.io/coderabbit/prs/github/greylag-ci/pipeline-check-vscode?labelColor=171717&color=FF570A&label=CodeRabbit+Reviews)](https://coderabbit.ai)
 
-Lint CI/CD pipelines for 34 providers against OWASP Top 10 CI/CD Risks and 17 other compliance frameworks. 1160+ rules, inline in your editor: severity-graded gutter squiggles, hover descriptions with `--explain` prose, and recommended-action hints. Built on the same rule registry as the [pipeline-check](https://github.com/dmartinochoa/pipeline-check) CLI, so editor findings match `pipeline_check --output json` byte-for-byte (modulo position translation).
+Lint CI/CD pipelines for 39 providers against OWASP Top 10 CI/CD Risks and 17 other compliance frameworks. 1220+ rules, inline in your editor: severity-graded gutter squiggles, hover descriptions with `--explain` prose, and recommended-action hints. Built on the same rule registry as the [pipeline-check](https://github.com/dmartinochoa/pipeline-check) CLI, so editor findings match `pipeline_check --output json` byte-for-byte (modulo position translation).
 
 ![Editor window with the Findings panel grouped by severity, gutter squiggles on the open workflow file, the activity-bar badge showing six findings, and a diagnostic hover tooltip](docs/screenshots/01-inline-findings.png)
 
@@ -37,16 +37,16 @@ Pilot provider coverage (single-file workflow providers plus Dockerfile):
 
 | Provider | Trigger file(s) |
 |---|---|
-| GitHub Actions | `.github/workflows/*.yml` |
-| GitLab CI | `.gitlab-ci.yml` |
-| Azure DevOps | `azure-pipelines.yml` |
-| Bitbucket Pipelines | `bitbucket-pipelines.yml` |
-| CircleCI | `.circleci/config.yml` |
-| Google Cloud Build | `cloudbuild.yaml` |
-| Buildkite | `.buildkite/pipeline.yml` |
+| GitHub Actions | `.github/workflows/*.yml` / `*.yaml` |
+| GitLab CI | `.gitlab-ci.yml` / `.gitlab-ci.yaml` |
+| Azure DevOps | `azure-pipelines.yml` / `azure-pipelines.yaml` |
+| Bitbucket Pipelines | `bitbucket-pipelines.yml` / `bitbucket-pipelines.yaml` |
+| CircleCI | `.circleci/config.yml` / `.circleci/config.yaml` |
+| Google Cloud Build | `cloudbuild.yml` / `cloudbuild.yaml` |
+| Buildkite | `.buildkite/pipeline.yml` / `.buildkite/pipeline.yaml` |
 | Drone CI | `.drone.yml` / `.drone.yaml` |
 | Jenkins | `Jenkinsfile` (Declarative and Scripted) |
-| Dockerfile | `Dockerfile` / `Containerfile` |
+| Dockerfile | `Dockerfile` / `Containerfile` / `Dockerfile.<suffix>` / `*.Dockerfile` |
 
 Multi-file and context-heavy providers (Kubernetes, Helm, Terraform plans, live AWS, CloudFormation, SCM posture) ship in a later release; the CLI already covers them.
 

@@ -1,8 +1,8 @@
 {
   "name": "pipeline-check",
   "displayName": "Pipeline-Check",
-  "description": "Lint CI/CD pipelines for 34 providers against OWASP Top 10 CI/CD Risks and 17 other compliance frameworks. 1160+ rules, inline in your editor.",
-  "version": "1.5.1",
+  "description": "Lint CI/CD pipelines for 39 providers against OWASP Top 10 CI/CD Risks and 17 other compliance frameworks. 1220+ rules, inline in your editor.",
+  "version": "1.6.0",
   "publisher": "greylag-ci",
   "license": "MIT",
   "icon": "icon.png",
@@ -94,12 +94,12 @@
       {
         "view": "pipelineCheck.findings",
         "when": "pipelineCheck.lspReady",
-        "contents": "Pipeline-Check lints CI/CD configs against OWASP Top 10 CI/CD risks and 17 other compliance frameworks. 1160+ rules.\n\n[Scan workspace](command:pipelineCheck.scanWorkspace)\n\nFindings also appear automatically as you open `.github/workflows/*.yml`, `.gitlab-ci.yml`, `Dockerfile`, and other supported configs.\n\nNavigate findings with `Alt+F8` / `Shift+Alt+F8`."
+        "contents": "Pipeline-Check lints CI/CD configs against OWASP Top 10 CI/CD risks and 17 other compliance frameworks. 1220+ rules.\n\n[Scan workspace](command:pipelineCheck.scanWorkspace)\n\nFindings also appear automatically as you open `.github/workflows/*.yml`, `.gitlab-ci.yml`, `Dockerfile`, and other supported configs.\n\nNavigate findings with `Alt+F8` / `Shift+Alt+F8`."
       },
       {
         "view": "pipelineCheck.findings",
         "when": "!pipelineCheck.lspReady && !pipelineCheck.engineOutOfDate",
-        "contents": "Pipeline-Check lints CI/CD configs against OWASP Top 10 CI/CD risks and 17 other compliance frameworks. 1160+ rules.\n\nIt needs a Python helper — `pipeline-check[lsp]` from PyPI — running locally.\n\n[Install in terminal](command:pipelineCheck.installInTerminal)\n[Retry connection](command:pipelineCheck.restart)\n\nAlready installed but still seeing this? [Open server log](command:pipelineCheck.showLog)."
+        "contents": "Pipeline-Check lints CI/CD configs against OWASP Top 10 CI/CD risks and 17 other compliance frameworks. 1220+ rules.\n\nIt needs a Python helper — `pipeline-check[lsp]` from PyPI — running locally.\n\n[Install in terminal](command:pipelineCheck.installInTerminal)\n[Retry connection](command:pipelineCheck.restart)\n\nAlready installed but still seeing this? [Open server log](command:pipelineCheck.showLog)."
       },
       {
         "view": "pipelineCheck.findings",
