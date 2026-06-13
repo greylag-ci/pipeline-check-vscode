@@ -11,17 +11,105 @@ versions follow [SemVer](https://semver.org/).
 > section **above** Unreleased, or remove the Unreleased block for the
 > release commit. Otherwise the GitHub release ships boilerplate.
 
-## [Unreleased]
+## [1.6.0] — 2026-06-13
+
+User-visible fix to a real bug plus settings-UI polish, packaged
+with a refresh of the engine-capability claims to upstream's
+pipeline-check 1.13.0 line.
+
+The bug fix is the headline: `TRIGGER_PATTERNS` was stricter than
+the upstream LSP's actual file-detection. Users opening
+`.gitlab-ci.yaml` (with the y-a-m-l form), `azure-pipelines.yaml`,
+`bitbucket-pipelines.yaml`, `.circleci/config.yaml`,
+`cloudbuild.yml`, `.buildkite/pipeline.yaml`, `Dockerfile.alpine`,
+or `myapp.Dockerfile` got nothing — `workspaceContains:` never
+fired, the LSP `documentSelector` didn't match, and the middleware
+filter dropped the file. Silent. Now matches the upstream LSP's
+actual tolerance.
+
+### Added
+
+- **File-pattern tolerance matches upstream LSP.** Widened
+  [`TRIGGER_PATTERNS`](src/providers.ts) for the six YAML-extension
+  providers to accept both `.yml` AND `.yaml` (gitlab / azure /
+  bitbucket / circleci / cloud-build / buildkite), and added the
+  `Dockerfile.<suffix>` / `*.Dockerfile` shapes the LSP's
+  `pipeline_check/lsp/detection.py` accepts. VS Code's
+  `workspaceContains:` grammar does not brace-expand, so
+  `activationEvents` enumerates each expanded variant explicitly
+  (+8 new entries).
+- **Settings UI polish via `enumDescriptions`.** The Settings dropdown
+  now explains each enum option instead of just showing the raw ID.
+  Biggest win on `pipelineCheck.disabledProviders` — `cloud-build`
+  vs `buildkite` vs `circleci` was opaque from the IDs alone.
+  Applied to `severityThreshold` (four severity tiers with what
+  stays / what's dropped), `disabledProviders.items` (10 providers
+  with their trigger files), and `trace.server` (three trace levels).
+- **README docs page link** to the upstream
+  [`docs/vscode.md`](https://dmartinochoa.github.io/pipeline-check/integrations/vscode/)
+  reference — install recipes for Cursor / Windsurf / VSCodium /
+  Neovim / Helix, CLI-vs-extension matrix, troubleshooting.
 
 ### Changed
 
-- Refreshed the engine-capability claims in the README, marketplace
-  description, and walkthrough panels to match the pipeline-check 1.12.0
-  release: **34 providers** (was 22), **17 other compliance frameworks**
-  beyond OWASP Top 10 CI/CD (was 14), and **1160+ rules** (was 810+). No
-  code change; `MIN_ENGINE_VERSION` stays at the 1.x floor since the
-  extension still only reads the stable `Diagnostic.code.target` /
-  `data.severity` fields.
+- **Marketplace keywords now reflect what the LSP actually scans.**
+  Removed `terraform`, `cloudformation`, `kubernetes`, `helm` (the
+  CLI covers these but the extension's LSP doesn't dispatch to
+  them — multi-file / context-heavy, deferred per the README's
+  "What it scans" caveat). Marketplace searchers landing on those
+  terms would install the extension, open a Terraform file, see no
+  findings, and bounce. Added `azure-pipelines`,
+  `bitbucket-pipelines`, `circleci`, `jenkins`, `drone` —
+  providers we do scan.
+- **README "What it scans" table updated** to show the widened
+  trigger-file forms for every YAML-extension provider plus the
+  Dockerfile suffix shapes.
+- **Engine-capability claims refreshed** to match upstream
+  `pipeline-check`'s current numbers: **39 providers** (was 34),
+  **1220+ rules** (was 1160+). 17 other compliance frameworks
+  beyond OWASP Top 10 CI/CD unchanged. Applied to the marketplace
+  description, the README headline, and the Findings welcome
+  panels. `MIN_ENGINE_VERSION` stays at the 1.x floor — the
+  extension still reads only the stable `Diagnostic.code.target` /
+  `data.severity` wire fields and bumping would push users without
+  an actual feature gate.
+
+### Internal
+
+- **Three manifest regression fences** in
+  [src/manifest.test.ts](src/manifest.test.ts) so the silent drift
+  bug above can't recur:
+  1. `activationEvents` must be exactly the brace-expanded
+     `TRIGGER_PATTERNS` (symmetric-difference comparison).
+  2. No `activationEvent` carries unexpanded braces — VS Code
+     matches the literal text and never activates on those.
+  3. Every settings `enum` with sibling `enumDescriptions` must
+     have equal-length arrays — a mismatch silently drops the tail
+     or, worse, shifts descriptions onto the wrong enum value.
+- **Provider-drift fence** between the manifest's
+  `disabledProviders` enum, `PROVIDER_IDS` (runtime), and a pinned
+  `LSP_SUPPORTED_PROVIDER_IDS` mirroring upstream
+  `pipeline_check/lsp/scan.py`'s dispatch set. Fires the day
+  upstream widens with `harness` / `devenv` / similar.
+- **Positive coverage** for every newly-accepted file shape in
+  [src/providers.test.ts](src/providers.test.ts) — `.yaml`
+  variants for the six providers, `Dockerfile.alpine` /
+  `Dockerfile.dev` / `*.Dockerfile` shapes, lowercase parity. A
+  future narrowing has to remove these assertions deliberately
+  rather than silently dropping editor coverage.
+- **`expandBraces` exported** from `providers.ts` (was a private
+  helper) so the manifest drift fence reuses the same logic the
+  runtime glob matcher uses — single source of truth. Dedicated
+  unit-test block covers no-brace / single-brace / multi-brace /
+  three-alternative cases.
+- **Upstream proposal filed** at
+  [`dmartinochoa/pipeline-check#332`](https://github.com/dmartinochoa/pipeline-check/issues/332)
+  for `textDocument/codeAction` support — would expose the engine's
+  120+ safe-tier autofixers as editor lightbulb fixes. Blocked on
+  upstream LSP work; this release is independent.
+
+Test count: 397 → 408 (11 new). Lint clean, typecheck clean, prod
+`npm audit` clean.
 
 ## [1.5.1] — 2026-05-27
 
