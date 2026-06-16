@@ -12,6 +12,7 @@ vi.mock("vscode", async () => {
 import { resetStubState } from "./__testStubs__/vscode";
 import {
   _getEngineVersionForTesting,
+  _workspaceHasCiGlobForTesting,
   countDiagnostics,
   formatStatusBarAccessibilityLabel,
   formatStatusBarText,
@@ -20,6 +21,7 @@ import {
   registerStatusBar,
   setEngineVersion,
 } from "./statusBar";
+import { TRIGGER_PATTERNS } from "./providers";
 
 // Helpers
 const make = (sev?: string) => ({
@@ -545,5 +547,37 @@ describe("registerStatusBar — latch release on folder removal", () => {
     await tick();
     const listeners = globalThis.__stubWorkspaceFoldersListeners ?? [];
     expect(listeners).toHaveLength(1);
+  });
+});
+
+// ─── WORKSPACE_HAS_CI_GLOB ↔ TRIGGER_PATTERNS invariant ─────────────
+
+describe("WORKSPACE_HAS_CI_GLOB — derived from TRIGGER_PATTERNS", () => {
+  // The status bar's relevance probe (the `findFiles` sweep that
+  // decides whether to surface the item at all) reads from a
+  // WORKSPACE_HAS_CI_GLOB built from TRIGGER_PATTERNS. Before v1.6.x
+  // this constant was a hard-coded string mirror that drifted when
+  // providers.ts widened — workspaces whose only CI file was a
+  // `.gitlab-ci.yaml`, `Dockerfile.alpine`, etc. wouldn't latch the
+  // bar as relevant on activation. Same silent-drift class
+  // src/manifest.test.ts now fences for `activationEvents`. This
+  // test closes the equivalent gap on the status bar's side.
+
+  it("contains every TRIGGER_PATTERN as a comma-separated alternative inside a single brace group", () => {
+    // Build the same shape the runtime derives so a future
+    // refactor that switches the join strategy still trips the
+    // fence if a pattern is dropped or added.
+    const expected = `{${TRIGGER_PATTERNS.join(",")}}`;
+    expect(_workspaceHasCiGlobForTesting).toBe(expected);
+  });
+
+  it("includes every pattern verbatim (no stripping of brace alternatives)", () => {
+    // Defence against a future "let's expand the braces for
+    // VS Code findFiles compatibility" change — findFiles does
+    // support nested braces, so the runtime should leave them
+    // alone. If someone strips them, fire loudly.
+    for (const pattern of TRIGGER_PATTERNS) {
+      expect(_workspaceHasCiGlobForTesting).toContain(pattern);
+    }
   });
 });

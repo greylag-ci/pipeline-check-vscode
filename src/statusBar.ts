@@ -6,6 +6,7 @@
 // function so the tests can pin the copy without booting VS Code.
 
 import * as vscode from "vscode";
+import { TRIGGER_PATTERNS } from "./providers";
 
 const DIAGNOSTIC_SOURCE = "pipeline-check";
 
@@ -225,13 +226,20 @@ export function _getEngineVersionForTesting(): string | undefined {
   return engineVersion;
 }
 
-// File patterns that suggest the current workspace is worth showing
-// the status bar in. Mirrors providers.ts's TRIGGER_PATTERNS — kept
-// inline here so the status bar can ship without a circular import
-// (providers.ts is consumed by extension.ts which orchestrates this
-// module).
-const WORKSPACE_HAS_CI_GLOB =
-  "{**/.github/workflows/*.yml,**/.github/workflows/*.yaml,**/.gitlab-ci.yml,**/azure-pipelines.yml,**/bitbucket-pipelines.yml,**/.circleci/config.yml,**/cloudbuild.yaml,**/.buildkite/pipeline.yml,**/.drone.yml,**/.drone.yaml,**/Jenkinsfile,**/Dockerfile,**/Containerfile}";
+// File-pattern union that decides whether the current workspace is
+// worth showing the status bar in. Derived from `TRIGGER_PATTERNS`
+// in providers.ts (the single source of truth used by the LSP's
+// `documentSelector`, the package.json `activationEvents`, and the
+// middleware filter) so a future widening of `TRIGGER_PATTERNS`
+// automatically extends the status-bar's relevance probe — no
+// risk of the silent class of drift bug v1.6.0 fixed elsewhere.
+// providers.ts is a leaf module (no other in-repo imports), so this
+// import is safe from circular-resolution concerns.
+const WORKSPACE_HAS_CI_GLOB = `{${TRIGGER_PATTERNS.join(",")}}`;
+
+// Exported for the regression test in src/statusBar.test.ts that
+// pins the WORKSPACE_HAS_CI_GLOB ↔ TRIGGER_PATTERNS invariant.
+export const _workspaceHasCiGlobForTesting = WORKSPACE_HAS_CI_GLOB;
 
 /**
  * Wire up the status bar item. Returns the item the caller pushes
