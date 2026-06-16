@@ -1,3 +1,4 @@
+*.vsix
 .vscode/**
 .vscode-test/**
 .claude/**

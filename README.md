@@ -85,7 +85,7 @@ codium --install-extension greylag-ci.pipeline-check
 
 ### 3. Verify
 
-Open any supported config file (see [What it scans](#what-it-scans)) — findings appear inline within a second or two, and the status bar shows a `🛡` tally. If you see `🛡 LSP not ready` instead, run **Pipeline-Check: Show language server output** from the Command Palette; the most common cause is `serverCommand` pointing at an interpreter that doesn't have `pipeline_check` installed.
+Open any supported config file (see [What it scans](#what-it-scans)) — findings appear inline within a second or two, and the status bar shows a `🛡` tally. If the status-bar item doesn't appear at all (the LSP failed to come up), the Findings activity-bar panel surfaces an **Install in terminal** / **Upgrade in terminal** button as appropriate. For the underlying error, run **Pipeline-Check: Show language server output** from the Command Palette; the most common cause is `serverCommand` pointing at an interpreter that doesn't have `pipeline_check` installed.
 
 ## Configuration
 

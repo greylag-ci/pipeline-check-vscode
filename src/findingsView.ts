@@ -8,6 +8,7 @@
 // stays intact.
 
 import * as vscode from "vscode";
+import * as clientLog from "./log";
 
 // Diagnostics from other extensions (eslint, mypy, redhat.yaml schema
 // validation) flow through the same publish stream we read from. Filter
@@ -240,9 +241,16 @@ export class FindingsTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     // user re-confirms the current Quick Pick selection.
     if (sameSeveritySet(this.hiddenSeverities, hidden)) return;
     this.hiddenSeverities = new Set(hidden);
-    void this.workspaceState.update(HIDDEN_SEVERITIES_KEY, [
-      ...this.hiddenSeverities,
-    ]);
+    void Promise.resolve(
+      this.workspaceState.update(HIDDEN_SEVERITIES_KEY, [
+        ...this.hiddenSeverities,
+      ]),
+    ).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      clientLog.warn(
+        `findingsView: failed to persist hidden-severities preference — ${msg}`,
+      );
+    });
     void vscode.commands.executeCommand(
       "setContext",
       "pipelineCheck.severityFilterActive",

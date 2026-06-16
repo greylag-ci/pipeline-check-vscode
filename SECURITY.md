@@ -20,8 +20,8 @@ Credit will be attributed in the release notes and in the CVE record
 ## Data collection
 
 **The extension does not collect telemetry.** No usage, error, or
-identity data is sent anywhere. The only network requests the
-extension itself initiates are:
+identity data is sent anywhere. The network requests the extension
+itself initiates are:
 
 1. **`vscode.env.openExternal(<rule-docs-url>)`** when a user clicks
    the *Open Rule Documentation* link on a finding. That opens the URL
@@ -32,11 +32,23 @@ extension itself initiates are:
 2. **`vscode.env.openExternal(<github-release-url>)`** when a user
    clicks *See release notes* on the one-time post-upgrade
    notification. Also user-initiated.
+3. **HTTPS GET to `https://pypi.org/pypi/pipeline-check/json`** —
+   the daily engine-update poll added in v1.5.0. Fires at most once
+   per 24 h after a successful LSP preflight (per-session latch +
+   `globalState` timestamp); the only response field consumed is
+   `info.version`. If the installed engine is older, a non-blocking
+   notification offers an Upgrade action that runs the existing
+   `python -m pip install --upgrade "pipeline-check[lsp]"` flow in a
+   terminal (typed but not auto-executed). No identifier — anonymous
+   or otherwise — is sent with the request; it's a vanilla request
+   for a public PyPI package metadata document. The poll is fully
+   disabled by setting `pipelineCheck.engineUpdates.checkEnabled`
+   to `false`.
 
 Everything else — diagnostic publishing, scan progress, tree state —
 stays between your editor and the locally-spawned LSP child process.
-No `fetch` to a third-party analytics endpoint, no anonymous-id
-header, no opt-in pixel.
+No `fetch` to an analytics endpoint, no anonymous-id header, no
+opt-in pixel.
 
 ## Supported versions
 
