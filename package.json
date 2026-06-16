@@ -2,7 +2,7 @@
   "name": "pipeline-check",
   "displayName": "Pipeline-Check",
   "description": "Lint CI/CD pipelines for 39 providers against OWASP Top 10 CI/CD Risks and 17 other compliance frameworks. 1220+ rules, inline in your editor.",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "publisher": "greylag-ci",
   "license": "MIT",
   "icon": "icon.png",

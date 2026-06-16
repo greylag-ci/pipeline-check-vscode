@@ -11,6 +11,76 @@ versions follow [SemVer](https://semver.org/).
 > section **above** Unreleased, or remove the Unreleased block for the
 > release commit. Otherwise the GitHub release ships boilerplate.
 
+## [1.6.1] — 2026-06-16
+
+Post-1.6.0 review fixes. One real bug (the same silent-drift class
+1.6.0 fixed elsewhere, hiding in `statusBar.ts`), one
+security-doc correction (the daily PyPI poll added in v1.5.0 was
+not documented in `SECURITY.md`), one README clarity fix, plus
+small tooling/lockfile hygiene.
+
+### Fixed
+
+- **Status bar's workspace-relevance probe matches what the LSP
+  actually scans.** The `findFiles` glob `statusBar.ts` used to
+  decide whether to surface the bar at all was a hard-coded mirror
+  of `TRIGGER_PATTERNS` that never got the v1.6.0 widening.
+  Workspaces whose only CI file was `.gitlab-ci.yaml`,
+  `Dockerfile.alpine`, `*.Dockerfile`, `azure-pipelines.yaml`,
+  `bitbucket-pipelines.yaml`, `.circleci/config.yaml`,
+  `cloudbuild.yml`, or `.buildkite/pipeline.yaml` wouldn't latch
+  the status bar as relevant on activation — the bar appeared only
+  after the first diagnostic publish (or never, in a clean
+  workspace). Derived directly from `TRIGGER_PATTERNS` in
+  [src/providers.ts](src/providers.ts) so a future widening
+  automatically extends the relevance probe; added a regression
+  test in [src/statusBar.test.ts](src/statusBar.test.ts) that
+  pins the invariant. Same silent-drift class the v1.6.0 manifest
+  fences catch for `activationEvents`.
+- **`findingsView.setHiddenSeverities` now actually logs persistence
+  failures.** The comment claimed failures were logged via the
+  VS Code promise chain, but the `void this.workspaceState.update(...)`
+  form swallowed both fulfillment and rejection. Wrapped in
+  `Promise.resolve(...).catch(...)` that routes through
+  `clientLog.warn`.
+
+### Changed
+
+- **SECURITY.md "Data collection" section now lists the PyPI poll.**
+  The v1.5.0-vintage engine-update notifier issues a daily HTTPS
+  GET to `https://pypi.org/pypi/pipeline-check/json` (per-session
+  latch + 24 h `globalState` throttle); the only response field
+  consumed is `info.version`. The previous text claimed "no fetch
+  to a third-party endpoint", which was inaccurate for
+  security-conscious readers reviewing what the extension touches
+  off-machine. Documented the trigger, the consumed field, and the
+  `pipelineCheck.engineUpdates.checkEnabled` opt-out.
+- **README "Verify" step describes the real LSP-broken symptom.**
+  Previously referenced a `🛡 LSP not ready` status-bar string that
+  `formatStatusBarText` never actually emits. Rewrote to describe
+  the real symptom (item doesn't appear at all) and point users at
+  the Findings welcome panel CTAs and the *Show Language Server
+  Output* command.
+
+### Internal
+
+- **`.vscodeignore` excludes `*.vsix`**, and the stranded
+  `pipeline-check-1.0.2.vsix` was removed from the repo root.
+  Without this, a maintainer running `npm run package` against a
+  tree carrying a stale `.vsix` from a prior build would bundle
+  the old one inside the new one. CI publishes from a fresh
+  checkout so this never burned the marketplace, but local
+  packaging smoke tests bloat the artifact.
+- **Dependency bumps that landed between v1.6.0 and v1.6.1:**
+  `dmartinochoa/pipeline-check` action `1.7.1 → 1.17.0` (the
+  dogfood CI scanner now runs the same engine line v1.6.1 users
+  install from PyPI), plus routine patches across `@types/node`,
+  `github/codeql-action`, `@vscode/vsce`, `tmp` (`0.2.6 → 0.2.7`,
+  pulling in the security fix from the upstream advisory),
+  `js-yaml`, `markdown-it`, `form-data`.
+- **CHANGELOG: 410/410 tests pass on this tree** (+2 since v1.6.0
+  for the status-bar drift fence).
+
 ## [1.6.0] — 2026-06-13
 
 User-visible fix to a real bug plus settings-UI polish, packaged
