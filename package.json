@@ -406,7 +406,7 @@
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.28.1",
-    "eslint": "^10.5.0",
+    "eslint": "^10.6.0",
     "typescript-eslint": "^8.62.1",
     "mocha": "^11.7.6",
     "ovsx": "^1.0.1",
