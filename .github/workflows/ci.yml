@@ -112,7 +112,7 @@ jobs:
         # publish a floating `v1` major tag, so a bare `@v1` reference
         # fails the actions resolver. Dependabot's github-actions
         # updater bumps this line on new releases.
-        uses: dmartinochoa/pipeline-check@f7979dde72f6f981aea6571926ad153d2cda5efd  # v1.17.0
+        uses: dmartinochoa/pipeline-check@418c80794b02e098fb775a079ebcf86c5859c5b9  # v1.19.0
         with:
           pipeline: github
           fail-on: HIGH
