@@ -11,6 +11,22 @@ versions follow [SemVer](https://semver.org/).
 > section **above** Unreleased, or remove the Unreleased block for the
 > release commit. Otherwise the GitHub release ships boilerplate.
 
+## [1.6.2] — 2026-07-22
+
+Metadata refresh for the pipeline-check **1.19.0** engine release.
+No extension-code changes.
+
+### Changed
+
+- **Capability claims track engine 1.19.0.** README, the marketplace
+  description, and both findings-view welcome panels now say
+  **1260+ rules** (was 1220+, the 1.18.x number). Provider count
+  (39) and framework count (17 other) are unchanged, so only the
+  rule total moved.
+- **CI dogfood pin bumped** to `dmartinochoa/pipeline-check`
+  v1.19.0 so the workflow-lint job runs the engine the claims
+  describe.
+
 ## [1.6.1] — 2026-06-16
 
 Post-1.6.0 review fixes. One real bug (the same silent-drift class
